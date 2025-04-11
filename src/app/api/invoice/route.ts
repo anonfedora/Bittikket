@@ -33,6 +33,9 @@ export async function POST(request: NextRequest) {
       amount: body.amount,
       memo: body.memo,
       expiry: body.expiry || 3600,
+      rHash: lndInvoice.r_hash.toString("hex"),
+      paymentAddr: lndInvoice.payment_addr.toString("hex"),
+      isPaid: false,
     };
 
     return NextResponse.json(invoice);

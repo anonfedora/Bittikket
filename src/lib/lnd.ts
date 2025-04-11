@@ -3,13 +3,13 @@ import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
 import { promisify } from "util";
 import path from "path";
+import { LndInvoice } from "@/types";
 
-// Types for LND responses
-interface Invoice {
-  r_hash: Buffer;
-  payment_request: string;
-  add_index: string;
-  payment_addr: Buffer;
+// Custom type for LND Lightning service
+interface LightningService extends grpc.Client {
+  addInvoice(args: InvoiceRequest, callback: (error: Error | null, response: LndInvoice) => void): void;
+  getInfo(args: Record<string, never>, callback: (error: Error | null, response: NodeInfo) => void): void;
+  lookupInvoice(args: { r_hash: Buffer }, callback: (error: Error | null, response: LndInvoice) => void): void;
 }
 
 interface NodeInfo {
@@ -29,18 +29,6 @@ interface InvoiceRequest {
   value: number;
   memo: string;
   expiry: number;
-}
-
-// Custom type for LND Lightning service
-interface LightningService extends grpc.Client {
-  addInvoice(
-    args: InvoiceRequest,
-    callback: (error: Error | null, response: Invoice) => void
-  ): void;
-  getInfo(
-    args: Record<string, never>,
-    callback: (error: Error | null, response: NodeInfo) => void
-  ): void;
 }
 
 // Types for the LND gRPC service
@@ -129,8 +117,8 @@ export class LndClient {
     amount: number,
     memo: string,
     expiry: number = 3600
-  ): Promise<Invoice> {
-    const call = promisify<InvoiceRequest, Invoice>(
+  ): Promise<LndInvoice> {
+    const call = promisify<InvoiceRequest, LndInvoice>(
       this.services.lightning.addInvoice
     ).bind(this.services.lightning);
 
@@ -141,6 +129,14 @@ export class LndClient {
     });
 
     return invoice;
+  }
+
+  // Check invoice payment status
+  async checkInvoiceStatus(rHash: Buffer): Promise<LndInvoice> {
+    const call = promisify<{ r_hash: Buffer }, LndInvoice>(
+      this.services.lightning.lookupInvoice
+    ).bind(this.services.lightning);
+    return await call({ r_hash: rHash });
   }
 
   // Get info about the node

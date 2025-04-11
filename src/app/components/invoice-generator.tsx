@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { Copy, Loader2 } from "lucide-react";
+import { Copy, Loader2, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,6 +23,33 @@ export function InvoiceGenerator() {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
   const [invoice, setInvoice] = useState<FrontendInvoice | null>(null);
+
+  // Poll for invoice payment status
+  useEffect(() => {
+    if (!invoice || invoice.isPaid) return;
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const response = await fetch(`/api/invoice/${invoice.rHash}/status`);
+        if (!response.ok) {
+          throw new Error("Failed to check payment status");
+        }
+
+        const data = await response.json();
+        if (data.isPaid) {
+          setInvoice((prev) => prev ? { ...prev, isPaid: true } : null);
+          toast.success("Payment received!", {
+            description: "The invoice has been paid successfully.",
+          });
+          clearInterval(pollInterval);
+        }
+      } catch (err) {
+        console.error("Error checking payment status:", err);
+      }
+    }, 2000); // Poll every 2 seconds
+
+    return () => clearInterval(pollInterval);
+  }, [invoice]);
 
   const handleGenerateInvoice = async () => {
     setLoading(true);
@@ -107,10 +134,18 @@ export function InvoiceGenerator() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label>Invoice</Label>
-                <Button variant="ghost" size="sm" onClick={copyToClipboard}>
-                  <Copy className="h-4 w-4 mr-2" />
-                  Copy
-                </Button>
+                <div className="flex items-center gap-2">
+                  {invoice.isPaid && (
+                    <span className="flex items-center text-green-600">
+                      <CheckCircle2 className="h-4 w-4 mr-1" />
+                      Paid
+                    </span>
+                  )}
+                  <Button variant="ghost" size="sm" onClick={copyToClipboard}>
+                    <Copy className="h-4 w-4 mr-2" />
+                    Copy
+                  </Button>
+                </div>
               </div>
               <div className="p-3 bg-muted rounded-md">
                 <p className="text-xs break-all font-mono">
