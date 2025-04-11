@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/card";
 import { toast } from "sonner";
 import { FrontendInvoice } from "@/types";
+import { cn } from "@/lib/utils";
 
 export function InvoiceGenerator() {
   const [amount, setAmount] = useState<number>(0);
@@ -23,11 +24,13 @@ export function InvoiceGenerator() {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
   const [invoice, setInvoice] = useState<FrontendInvoice | null>(null);
+  const [checkingPayment, setCheckingPayment] = useState<boolean>(false);
 
   // Poll for invoice payment status
   useEffect(() => {
     if (!invoice || invoice.isPaid) return;
 
+    setCheckingPayment(true);
     const pollInterval = setInterval(async () => {
       try {
         const response = await fetch(`/api/invoice/${invoice.rHash}/status`);
@@ -37,18 +40,22 @@ export function InvoiceGenerator() {
 
         const data = await response.json();
         if (data.isPaid) {
-          setInvoice((prev) => prev ? { ...prev, isPaid: true } : null);
+          setInvoice((prev) => (prev ? { ...prev, isPaid: true } : null));
           toast.success("Payment received!", {
             description: "The invoice has been paid successfully.",
           });
           clearInterval(pollInterval);
+          setCheckingPayment(false);
         }
       } catch (err) {
         console.error("Error checking payment status:", err);
       }
     }, 2000); // Poll every 2 seconds
 
-    return () => clearInterval(pollInterval);
+    return () => {
+      clearInterval(pollInterval);
+      setCheckingPayment(false);
+    };
   }, [invoice]);
 
   const handleGenerateInvoice = async () => {
@@ -125,44 +132,59 @@ export function InvoiceGenerator() {
         )}
 
         {invoice && (
-          <div className="mt-6 space-y-4">
-            <div className="flex justify-center">
-              <div className="bg-white p-4 rounded-lg">
-                <QRCodeSVG value={invoice.paymentRequest} size={200} />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label>Invoice</Label>
-                <div className="flex items-center gap-2">
-                  {invoice.isPaid && (
-                    <span className="flex items-center text-green-600">
-                      <CheckCircle2 className="h-4 w-4 mr-1" />
-                      Paid
-                    </span>
-                  )}
-                  <Button variant="ghost" size="sm" onClick={copyToClipboard}>
-                    <Copy className="h-4 w-4 mr-2" />
-                    Copy
-                  </Button>
-                </div>
-              </div>
-              <div className="p-3 bg-muted rounded-md">
-                <p className="text-xs break-all font-mono">
-                  {invoice.paymentRequest}
+          <div
+            className={cn(
+              "mt-6 space-y-4 transition-all duration-500",
+              invoice.isPaid && "opacity-50"
+            )}
+          >
+            {invoice.isPaid ? (
+              <div className="flex flex-col items-center justify-center py-8 text-green-600">
+                <CheckCircle2 className="h-24 w-24 animate-in zoom-in" />
+                <p className="mt-4 text-lg font-medium">Payment Received!</p>
+                <p className="text-sm text-muted-foreground">
+                  Amount: {invoice.amount} sats
                 </p>
               </div>
-            </div>
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div>
-                <span className="font-medium">Amount:</span> {invoice.amount}{" "}
-                sats
-              </div>
-              <div>
-                <span className="font-medium">Expires in:</span>{" "}
-                {Math.floor(invoice.expiry / 60)} minutes
-              </div>
-            </div>
+            ) : (
+              <>
+                <div className="flex justify-center">
+                  <div className="bg-white p-4 rounded-lg">
+                    <QRCodeSVG value={invoice.paymentRequest} size={200} />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label>Invoice</Label>
+                    <Button variant="ghost" size="sm" onClick={copyToClipboard}>
+                      <Copy className="h-4 w-4 mr-2" />
+                      Copy
+                    </Button>
+                  </div>
+                  <div className="p-3 bg-muted rounded-md">
+                    <p className="text-xs break-all font-mono">
+                      {invoice.paymentRequest}
+                    </p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="font-medium">Amount:</span>{" "}
+                    {invoice.amount} sats
+                  </div>
+                  <div>
+                    <span className="font-medium">Expires in:</span>{" "}
+                    {Math.floor(invoice.expiry / 60)} minutes
+                  </div>
+                </div>
+                {checkingPayment && (
+                  <div className="flex items-center justify-center py-4 text-muted-foreground">
+                    <Loader2 className="h-6 w-6 animate-spin mr-2" />
+                    <span>Waiting for payment...</span>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
       </CardContent>
