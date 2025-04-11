@@ -6,10 +6,8 @@ interface RouteParams {
   rHash: string;
 }
 
-export async function GET(
-  request: NextRequest,
-  { params }: { params: RouteParams }
-): Promise<Response> {
+export async function GET(request: NextRequest, props: { params: Promise<RouteParams> }): Promise<Response> {
+  const params = await props.params;
   const { rHash } = params;
 
   if (!rHash) {
