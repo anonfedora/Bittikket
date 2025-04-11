@@ -1,36 +1,195 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Lightning Invoice App
+
+A reference implementation for Africa Free Routing 2025 (Accra) bootcamp students demonstrating how to interact with a Lightning Network node using gRPC and Next.js.
+
+## Overview
+
+This application demonstrates how to:
+
+- Connect to an LND node using gRPC
+- Generate Lightning invoices
+- Monitor invoice payment status
+- Build a modern UI for Lightning payments
+
+## Prerequisites
+
+- Node.js v18 or later
+- Access to an LND node (we use [Polar](https://lightningpolar.com/) for development)
+- Basic understanding of TypeScript and React
+- Basic understanding of the Lightning Network
 
 ## Getting Started
 
-First, run the development server:
+1. Clone the repository:
+
+```bash
+git clone https://github.com/Extheoisah/sample-ln-invoice-generator.git
+cd lightning-invoice-app
+```
+
+2. Install dependencies:
+
+```bash
+npm install
+```
+
+3. Configure your LND connection:
+
+   - Open `src/lib/lnd.ts`
+   - Update the `DEFAULT_CONFIG` with your LND node's:
+     - `rpcServer` address
+     - `tlsCertPath` location
+     - `macaroonPath` location
+
+4. Start the development server:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Project Structure
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+src/
+├── app/                    # Next.js app directory
+│   ├── api/               # API routes
+│   │   └── invoice/       # Invoice-related endpoints
+│   └── components/        # React components
+├── lib/
+│   ├── lnd.ts            # LND gRPC client
+│   └── utils.ts          # Utility functions
+└── types.ts              # TypeScript type definitions
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Key Concepts
 
-## Learn More
+### 1. LND gRPC Connection
 
-To learn more about Next.js, take a look at the following resources:
+The `LndClient` class in `src/lib/lnd.ts` handles the gRPC connection to your Lightning node:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```typescript
+class LndClient {
+  // Establishes secure connection using TLS cert and macaroon
+  private buildServices(): LndServices {
+    const tlsCert = fs.readFileSync(this.config.tlsCertPath);
+    const macaroon = fs.readFileSync(this.config.macaroonPath);
+    // ... setup gRPC connection
+  }
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+  // Create an invoice
+  async createInvoice(amount: number, memo: string, expiry: number): Promise<LndInvoice>
 
-## Deploy on Vercel
+  // Check payment status
+  async checkInvoiceStatus(rHash: Buffer): Promise<LndInvoice>
+}
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### 2. Invoice Generation
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+To generate an invoice:
+
+1. The frontend sends amount and memo to `/api/invoice`
+2. The API calls `lndClient.createInvoice()`
+3. Returns a payment request and other invoice details
+
+### 3. Payment Monitoring
+
+The app demonstrates two important patterns:
+
+1. Converting between Buffer and hex strings for gRPC communication
+2. Polling for payment status using `setInterval`
+
+## API Reference
+
+### Generate Invoice
+
+```typescript
+POST /api/invoice
+Body: {
+  amount: number;    // Amount in satoshis
+  memo: string;      // Invoice description
+  expiry?: number;   // Expiry in seconds (default: 3600)
+}
+```
+
+### Check Payment Status
+
+```typescript
+GET /api/invoice/[rHash]/status
+Response: {
+  isPaid: boolean;
+}
+```
+
+## Common Tasks
+
+### 1. Creating a New Invoice
+
+```typescript
+const invoice = await lndClient.createInvoice(
+  1000,              // amount in sats
+  "Test payment",    // memo
+  3600              // expiry in seconds
+);
+```
+
+### 2. Checking Payment Status
+
+```typescript
+const status = await lndClient.checkInvoiceStatus(rHashBuffer);
+const isPaid = status.state === "SETTLED" || status.settled === true;
+```
+
+### 3. Converting Buffer to Hex
+
+```typescript
+// From Buffer to hex string
+const hexString = buffer.toString("hex");
+
+// From hex string to Buffer
+const buffer = Buffer.from(hexString, "hex");
+```
+
+## Best Practices
+
+1. **Error Handling**: Always wrap LND calls in try-catch blocks
+2. **Type Safety**: Use TypeScript interfaces for all LND responses
+3. **Buffer Handling**: Properly convert between Buffer and hex strings
+4. **Payment Monitoring**: Implement proper cleanup for payment polling
+5. **Security**: Never expose macaroons or TLS certs in the frontend
+
+## Common Issues
+
+1. **Connection Failed**
+   - Check if LND node is running
+   - Verify TLS cert and macaroon paths
+   - Ensure proper permissions on cert files
+
+2. **Type Errors**
+   - LND returns snake_case properties
+   - Convert to camelCase for frontend use
+   - Use proper TypeScript interfaces
+
+3. **Buffer Handling**
+   - gRPC expects Buffer for binary data
+   - Frontend needs hex strings
+   - Always convert appropriately
+
+## Additional Resources
+
+- [LND API Reference](https://api.lightning.community/)
+- [gRPC Concepts](https://grpc.io/docs/what-is-grpc/core-concepts/)
+- [Polar Documentation](https://lightningpolar.com/docs/intro)
+- [Lightning Network Specifications](https://github.com/lightning/bolts)
+
+## Contributing
+
+This is a reference implementation for educational purposes. If you find bugs or have improvements:
+
+1. Open an issue
+2. Submit a pull request
+3. Update documentation
+
+## License
+
+MIT License - Feel free to use this code for learning and development.
