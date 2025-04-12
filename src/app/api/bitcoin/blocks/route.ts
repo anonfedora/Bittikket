@@ -1,35 +1,42 @@
 import { NextResponse } from "next/server";
-import { bitcoin } from "@/lib/bitcoin";
+import BitcoinCLI from "@/lib/bitcoin-cli";
+
+const bitcoin = new BitcoinCLI();
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const limit = parseInt(searchParams.get("limit") || "10");
-    const startHeight = parseInt(searchParams.get("startHeight") || "0");
+    const start = parseInt(searchParams.get("start") || "0");
 
-    // Get current blockchain height
+    // Get the current block count
     const blockCount = await bitcoin.getBlockCount();
-    const startBlock = startHeight || blockCount;
+    
+    // Calculate the range of blocks to fetch
+    const startHeight = Math.max(0, blockCount - start);
+    const endHeight = Math.max(0, startHeight - limit);
+    
+    // Fetch blocks in parallel
+    const blocks = await Promise.all(
+      Array.from({ length: startHeight - endHeight }, async (_, i) => {
+        const height = startHeight - i;
+        const hash = await bitcoin.getBlockHash(height);
+        const block = await bitcoin.getBlock(hash);
+        const stats = await bitcoin.getBlockStats(height);
+        
+        return {
+          ...block,
+          stats,
+          height,
+        };
+      })
+    );
 
-    // Fetch blocks
-    const blocks = [];
-    for (let height = startBlock; height > Math.max(0, startBlock - limit); height--) {
-      const hash = await bitcoin.getBlockHash(height);
-      const block = await bitcoin.getBlock(hash, 2); // verbosity 2 for full transaction data
-      blocks.push(block);
-    }
-
-    return NextResponse.json({
-      status: "success",
-      data: blocks,
-    });
+    return NextResponse.json(blocks);
   } catch (error) {
     console.error("Error fetching blocks:", error);
     return NextResponse.json(
-      {
-        status: "error",
-        error: "Failed to fetch blocks",
-      },
+      { error: "Failed to fetch blocks" },
       { status: 500 }
     );
   }

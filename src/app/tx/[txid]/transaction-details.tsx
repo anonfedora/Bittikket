@@ -200,7 +200,7 @@ export function TransactionDetails({ txid }: { txid: string }) {
         const response = await fetch(`/api/bitcoin/tx/${txid}`);
         const data = await response.json();
         if (data.status === "success") {
-          setTransaction(data.data);
+          setTransaction(data.data.transaction);
         } else {
           setError(data.error || "Failed to fetch transaction");
         }

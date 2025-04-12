@@ -41,18 +41,6 @@ interface Transaction {
   }>;
 }
 
-interface BlockApiResponse {
-  height: number;
-  hash: string;
-  time: number;
-  size: number;
-  weight?: number;
-  tx?: Transaction[];
-  miner?: string;
-  difficulty: number;
-  fees?: number;
-}
-
 interface BlockData {
   height: number;
   hash: string;
@@ -63,6 +51,20 @@ interface BlockData {
   miner: string;
   difficulty: number;
   fees: number;
+}
+
+interface ApiBlockData {
+  height: number;
+  hash: string;
+  time: number;
+  size: number;
+  weight: number;
+  tx: Transaction[];
+  difficulty: number;
+  stats?: {
+    miner?: string;
+    totalfee?: number;
+  };
 }
 
 interface MempoolData {
@@ -387,111 +389,73 @@ function MempoolStats({ mempoolData }: { mempoolData: MempoolData | null }) {
 export function BlockchainExplorer() {
   const [blocks, setBlocks] = useState<BlockData[]>([]);
   const [selectedBlock, setSelectedBlock] = useState<BlockData | null>(null);
-  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 6 });
   const [mempoolData, setMempoolData] = useState<MempoolData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(0);
+
+  async function fetchData() {
+    try {
+      const [blocksResponse, mempoolResponse] = await Promise.all([
+        fetch(`/api/bitcoin/blocks?start=${currentPage}&limit=10`),
+        fetch('/api/bitcoin/mempool')
+      ]);
+
+      const blocksData = await blocksResponse.json();
+      const mempoolData = await mempoolResponse.json();
+
+      // Transform block data to match UI expectations
+      const transformedBlocks = blocksData.map((block: ApiBlockData) => ({
+        height: block.height,
+        hash: block.hash,
+        timestamp: block.time,
+        size: block.size,
+        weight: block.weight,
+        transactions: block.tx || [],
+        miner: block.stats?.miner || "Unknown",
+        difficulty: block.difficulty,
+        fees: block.stats?.totalfee || 0
+      }));
+
+      // Transform mempool data
+      const transformedMempool: MempoolData = {
+        info: mempoolData.info,
+        transactions: mempoolData.transactions
+      };
+
+      setBlocks(transformedBlocks);
+      setMempoolData(transformedMempool);
+      
+      // Set the first block as selected by default if none is selected
+      if (!selectedBlock && transformedBlocks.length > 0) {
+        setSelectedBlock(transformedBlocks[0]);
+      }
+    } catch (error) {
+      console.error('Error fetching data:', error);
+      toast.error('Failed to fetch blockchain data');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    async function fetchData() {
-      try {
-        // Fetch latest blocks (get last 10 blocks)
-        const blockResponse = await fetch("/api/bitcoin/blocks?limit=10");
-        const blockData = await blockResponse.json();
-        if (blockData.status === "success") {
-          const fetchedBlocks = blockData.data.map(
-            (block: BlockApiResponse) => ({
-              height: block.height,
-              hash: block.hash,
-              timestamp: block.time,
-              size: block.size,
-              weight: block.weight || 0,
-              transactions: block.tx || [],
-              miner: block.miner || "Unknown",
-              difficulty: block.difficulty,
-              fees: block.fees || 0,
-            })
-          );
-
-          setBlocks(fetchedBlocks);
-          if (!selectedBlock) {
-            setSelectedBlock(fetchedBlocks[0]);
-          }
-        }
-
-        // Fetch mempool data
-        const mempoolResponse = await fetch("/api/bitcoin/mempool");
-        const mempoolData = await mempoolResponse.json();
-        if (mempoolData.status === "success") {
-          setMempoolData(mempoolData.data);
-        }
-      } catch (error) {
-        console.error("Error fetching blockchain data:", error);
-      } finally {
-        setLoading(false);
-      }
-    }
-
     fetchData();
-    const interval = setInterval(fetchData, 30000); // Refresh every 30 seconds
+    // Set up polling every 30 seconds
+    const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
-  }, [selectedBlock]); // Add selectedBlock to dependencies
+  }, [currentPage]);
 
   const handlePrevious = () => {
-    if (visibleRange.start > 0) {
-      setVisibleRange({
-        start: visibleRange.start - 1,
-        end: visibleRange.end - 1,
-      });
+    if (currentPage > 0) {
+      setCurrentPage(prev => prev - 1);
     }
   };
 
   const handleNext = () => {
-    if (visibleRange.end < blocks.length) {
-      setVisibleRange({
-        start: visibleRange.start + 1,
-        end: visibleRange.end + 1,
-      });
-    }
+    setCurrentPage(prev => prev + 1);
   };
 
-  // Add function to load more blocks
-  const loadMoreBlocks = async () => {
-    if (blocks.length === 0) return;
-
-    const lastBlock = blocks[blocks.length - 1];
-    try {
-      const response = await fetch(
-        `/api/bitcoin/blocks?startHeight=${lastBlock.height - 1}&limit=10`
-      );
-      const data = await response.json();
-      if (data.status === "success") {
-        const newBlocks = data.data.map((block: BlockApiResponse) => ({
-          height: block.height,
-          hash: block.hash,
-          timestamp: block.time,
-          size: block.size,
-          weight: block.weight || 0,
-          transactions: block.tx || [],
-          miner: block.miner || "Unknown",
-          difficulty: block.difficulty,
-          fees: block.fees || 0,
-        }));
-
-        setBlocks((prevBlocks) => [...prevBlocks, ...newBlocks]);
-      }
-    } catch (error) {
-      console.error("Error loading more blocks:", error);
-    }
-  };
-
-  useEffect(() => {
-    // Load more blocks when we're close to the end
-    if (visibleRange.end >= blocks.length - 2) {
-      loadMoreBlocks();
-    }
-  }, [visibleRange.end, blocks.length]);
-
-  const visibleBlocks = blocks.slice(visibleRange.start, visibleRange.end);
+  // Calculate visible blocks based on window size
+  const visibleBlocks = blocks;
 
   if (loading) {
     return (
@@ -519,9 +483,13 @@ export function BlockchainExplorer() {
       <div className="relative">
         <button
           onClick={handlePrevious}
-          className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-4 p-2 rounded-full bg-white border border-zinc-200 shadow-sm hover:border-zinc-300 z-10"
+          disabled={currentPage === 0}
+          className={cn(
+            "absolute left-0 top-1/2 -translate-y-1/2 -translate-x-4 p-2 rounded-full bg-white border border-zinc-200 shadow-sm hover:border-zinc-300 z-10",
+            currentPage === 0 && "opacity-50 cursor-not-allowed"
+          )}
         >
-          <ChevronLeft className="h-4 w-4 text-zinc-600 cursor-pointer" />
+          <ChevronLeft className="h-4 w-4 text-zinc-600" />
         </button>
 
         <div className="overflow-x-auto">
@@ -541,7 +509,7 @@ export function BlockchainExplorer() {
           onClick={handleNext}
           className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-4 p-2 rounded-full bg-white border border-zinc-200 shadow-sm hover:border-zinc-300 z-10"
         >
-          <ChevronRight className="h-4 w-4 text-zinc-600 cursor-pointer" />
+          <ChevronRight className="h-4 w-4 text-zinc-600" />
         </button>
       </div>
 
