@@ -10,13 +10,16 @@ This application demonstrates how to:
 - Generate Lightning invoices
 - Monitor invoice payment status
 - Build a modern UI for Lightning payments
+- Explore Bitcoin blockchain data in real-time
+- Monitor mempool statistics and transaction fees
 
 ## Prerequisites
 
 - Node.js v18 or later
 - Access to an LND node (we use [Polar](https://lightningpolar.com/) for development)
+- Access to a Bitcoin Core node
 - Basic understanding of TypeScript and React
-- Basic understanding of the Lightning Network
+- Basic understanding of the Lightning Network and Bitcoin blockchain
 
 ## Getting Started
 
@@ -41,7 +44,16 @@ npm install
      - `tlsCertPath` location
      - `macaroonPath` location
 
-4. Start the development server:
+4. Configure your Bitcoin Core connection:
+
+   - Open `src/lib/bitcoin.ts`
+   - Update the `DEFAULT_CONFIG` with your Bitcoin node's:
+     - `host` address
+     - `port` number
+     - `username` and `password`
+     - `network` type (mainnet/testnet)
+
+5. Start the development server:
 
 ```bash
 npm run dev
@@ -53,10 +65,12 @@ npm run dev
 src/
 ├── app/                    # Next.js app directory
 │   ├── api/               # API routes
-│   │   └── invoice/       # Invoice-related endpoints
+│   │   ├── invoice/       # Invoice-related endpoints
+│   │   └── bitcoin/       # Bitcoin-related endpoints
 │   └── components/        # React components
 ├── lib/
 │   ├── lnd.ts            # LND gRPC client
+│   ├── bitcoin.ts        # Bitcoin Core client
 │   └── utils.ts          # Utility functions
 └── types.ts              # TypeScript type definitions
 ```
@@ -84,7 +98,35 @@ class LndClient {
 }
 ```
 
-### 2. Invoice Generation
+### 2. Bitcoin Blockchain Explorer
+
+The `BlockchainExplorer` component in `src/app/components/blockchain-explorer.tsx` provides a real-time view of the Bitcoin blockchain:
+
+- Live block visualization with drag-to-scroll interface
+- Detailed block information including:
+  - Block height and hash
+  - Transaction count and fees
+  - Block size and weight
+  - Mining difficulty
+  - Timestamp and miner information
+- Transaction details within blocks
+- Real-time mempool statistics:
+  - Unconfirmed transaction count
+  - Memory usage
+  - Fee rates (low, medium, high, urgent priority)
+  - Minimum relay fees
+
+```typescript
+// Example: Fetching block data
+const blockResponse = await fetch("/api/bitcoin/blocks?limit=10");
+const blockData = await blockResponse.json();
+
+// Example: Fetching mempool statistics
+const mempoolResponse = await fetch("/api/bitcoin/mempool");
+const mempoolData = await mempoolResponse.json();
+```
+
+### 3. Invoice Generation
 
 To generate an invoice:
 
@@ -92,7 +134,7 @@ To generate an invoice:
 2. The API calls `lndClient.createInvoice()`
 3. Returns a payment request and other invoice details
 
-### 3. Payment Monitoring
+### 4. Payment Monitoring
 
 The app demonstrates two important patterns:
 
