@@ -11,7 +11,7 @@ import Client, {
   NetworkInfo,
   PeerInfo,
   MempoolInfo,
-  RawMempool
+  RawMempool,
 } from "bitcoin-core";
 
 export interface BitcoinConfig extends ClientConfig {
@@ -26,7 +26,7 @@ const DEFAULT_CONFIG: BitcoinConfig = {
   host: "http://127.0.0.1:18443",
   port: 18443, // Default Polar regtest RPC port
   timeout: 30000,
-  version: "0.28.0"
+  version: "0.28.0",
 };
 
 export class BitcoinClient {
@@ -38,9 +38,9 @@ export class BitcoinClient {
       ...DEFAULT_CONFIG,
       ...config,
     };
-    console.log('Initializing Bitcoin client with config:', {
+    console.log("Initializing Bitcoin client with config:", {
       ...finalConfig,
-      password: '******' // Hide password in logs
+      password: "******", // Hide password in logs
     });
     this.client = new Client(finalConfig);
     this.network = finalConfig.network;
@@ -190,12 +190,12 @@ export class BitcoinClient {
 
   async getNetworkInfo(): Promise<NetworkInfo> {
     try {
-      console.log('Fetching network info...');
+      console.log("Fetching network info...");
       const info = await this.client.getNetworkInfo();
-      console.log('Network info received:', info);
+      console.log("Network info received:", info);
       return info;
     } catch (error) {
-      console.error('Error in getNetworkInfo:', error);
+      console.error("Error in getNetworkInfo:", error);
       throw error;
     }
   }
@@ -213,7 +213,10 @@ export class BitcoinClient {
    * @param txid - Transaction ID
    * @param verbose - Whether to return detailed transaction info
    */
-  async getRawTransaction(txid: string, verbose = true): Promise<any> {
+  async getRawTransaction(
+    txid: string,
+    verbose = true
+  ): Promise<Record<string, unknown>> {
     return this.client.getRawTransaction(txid, verbose);
   }
 }
