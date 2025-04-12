@@ -20,6 +20,9 @@ export async function GET(
         mempoolInfo = await bitcoin.getMempoolEntry(txid);
       } catch {
         // Transaction might not be in mempool anymore, ignore error
+        console.error(
+          "Transaction might not be in mempool anymore, ignoring error"
+        );
       }
     }
 

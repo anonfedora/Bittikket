@@ -15,7 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { toast } from "sonner";
-import { FrontendInvoice } from "@/types";
+import { FrontendInvoice } from "@/types/lnd";
 import { cn } from "@/lib/utils";
 
 export function InvoiceGenerator() {

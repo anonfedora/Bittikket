@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { lndClient } from "@/lib/lnd";
-import { PaymentStatus } from "@/types";
+import { PaymentStatus } from "@/types/lnd";
 
 interface RouteParams {
   rHash: string;

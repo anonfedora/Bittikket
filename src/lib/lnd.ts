@@ -3,47 +3,14 @@ import * as grpc from "@grpc/grpc-js";
 import * as protoLoader from "@grpc/proto-loader";
 import { promisify } from "util";
 import path from "path";
-import { LndInvoice } from "@/types";
-
-// Custom type for LND Lightning service
-interface LightningService extends grpc.Client {
-  addInvoice(args: InvoiceRequest, callback: (error: Error | null, response: LndInvoice) => void): void;
-  getInfo(args: Record<string, never>, callback: (error: Error | null, response: NodeInfo) => void): void;
-  lookupInvoice(args: { r_hash: Buffer }, callback: (error: Error | null, response: LndInvoice) => void): void;
-}
-
-interface NodeInfo {
-  version: string;
-  identityPubkey: string;
-  alias: string;
-  color: string;
-  numPeers: number;
-  numActiveChannels: number;
-  numInactiveChannels: number;
-  numPendingChannels: number;
-  blockHeight: number;
-  syncedToChain: boolean;
-}
-
-interface InvoiceRequest {
-  value: number;
-  memo: string;
-  expiry: number;
-}
-
-// Types for the LND gRPC service
-interface LndServices {
-  lightning: LightningService;
-  router: grpc.Client | null;
-  invoices: grpc.Client | null;
-}
-
-// Configuration for your LND node connection
-interface LndConfig {
-  rpcServer: string;
-  tlsCertPath: string;
-  macaroonPath: string;
-}
+import {
+  LndConfig,
+  LndInvoice,
+  LndServices,
+  LightningService,
+  NodeInfo,
+  LndInvoiceRequest,
+} from "@/types/lnd";
 
 // Default Polar configuration
 const DEFAULT_CONFIG: LndConfig = {
@@ -118,7 +85,7 @@ export class LndClient {
     memo: string,
     expiry: number = 3600
   ): Promise<LndInvoice> {
-    const call = promisify<InvoiceRequest, LndInvoice>(
+    const call = promisify<LndInvoiceRequest, LndInvoice>(
       this.services.lightning.addInvoice
     ).bind(this.services.lightning);
 
