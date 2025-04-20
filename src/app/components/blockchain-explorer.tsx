@@ -461,7 +461,7 @@ export function BlockchainExplorer() {
       const response = await fetch(
         `/api/bitcoin/search?q=${encodeURIComponent(searchQuery.trim())}`,
         {
-          signal: abortController.signal
+          signal: abortController.signal,
         }
       );
       const data = await response.json();
@@ -478,7 +478,8 @@ export function BlockchainExplorer() {
             const block = blockResult.data as BlockInfo;
             const fees = block.tx.reduce(
               (sum, tx) =>
-                sum + tx.vout.reduce((voutSum, vout) => voutSum + vout.value, 0),
+                sum +
+                tx.vout.reduce((voutSum, vout) => voutSum + vout.value, 0),
               0
             );
             // Convert BlockInfo to BlockData
@@ -572,19 +573,27 @@ export function BlockchainExplorer() {
             <Card key={index} className="p-4">
               <div className="flex items-start justify-between">
                 <div>
-                  <Badge>{result.type === "transaction" ? "Transaction" : "Address"}</Badge>
+                  <Badge>
+                    {result.type === "transaction" ? "Transaction" : "Address"}
+                  </Badge>
                   <div className="mt-2">
                     {result.type === "transaction" && (
                       <>
                         <div className="flex items-center gap-2">
-                          <p className="text-sm text-zinc-500">Transaction ID:</p>
+                          <p className="text-sm text-zinc-500">
+                            Transaction ID:
+                          </p>
                           <Link
-                            href={`/tx/${(result.data as TransactionInfo).txid}`}
+                            href={`/tx/${
+                              (result.data as TransactionInfo).txid
+                            }`}
                             className="hover:underline cursor-pointer"
                           >
                             {(result.data as TransactionInfo).txid}
                           </Link>
-                          <CopyButton text={(result.data as TransactionInfo).txid} />
+                          <CopyButton
+                            text={(result.data as TransactionInfo).txid}
+                          />
                         </div>
                         <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
                           <div>
@@ -611,6 +620,19 @@ export function BlockchainExplorer() {
                               {(result.data as TransactionInfo).vout.length}
                             </span>
                           </div>
+                          <div className="mt-4 flex justify-start">
+                            <button
+                              onClick={() =>
+                                router.push(
+                                  `/tx/${(result.data as TransactionInfo).txid}`
+                                )
+                              }
+                              className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
+                            >
+                              View Details
+                              <ArrowUpRight className="h-4 w-4" />
+                            </button>
+                          </div>
                         </div>
                       </>
                     )}
@@ -619,19 +641,28 @@ export function BlockchainExplorer() {
                         <div className="flex items-center gap-2">
                           <p className="text-sm text-zinc-500">Address:</p>
                           <button
-                            onClick={() => handleAddressClick((result.data as AddressResult).address)}
+                            onClick={() =>
+                              handleAddressClick(
+                                (result.data as AddressResult).address
+                              )
+                            }
                             className="font-mono text-sm hover:text-blue-600"
                           >
                             {(result.data as AddressResult).address}
                           </button>
-                          <CopyButton text={(result.data as AddressResult).address} />
+                          <CopyButton
+                            text={(result.data as AddressResult).address}
+                          />
                         </div>
                         <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
                           <div>
                             <span className="text-zinc-500">Type:</span>{" "}
                             <span className="text-zinc-900">
                               {(result.data as AddressResult).iswitness
-                                ? `Witness v${(result.data as AddressResult).witness_version}`
+                                ? `Witness v${
+                                    (result.data as AddressResult)
+                                      .witness_version
+                                  }`
                                 : (result.data as AddressResult).isscript
                                 ? "Script"
                                 : "Legacy"}
@@ -640,26 +671,43 @@ export function BlockchainExplorer() {
                           <div>
                             <span className="text-zinc-500">Balance:</span>{" "}
                             <span className="text-zinc-900 font-mono">
-                              {(result.data as AddressResult).balance.toFixed(8)} BTC
+                              {(result.data as AddressResult).balance.toFixed(
+                                8
+                              )}{" "}
+                              BTC
                             </span>
                           </div>
                           <div>
-                            <span className="text-zinc-500">Unspent Outputs:</span>{" "}
+                            <span className="text-zinc-500">
+                              Unspent Outputs:
+                            </span>{" "}
                             <span className="text-zinc-900">
-                              {(result.data as AddressResult).unspent_txouts.length}
+                              {
+                                (result.data as AddressResult).unspent_txouts
+                                  .length
+                              }
                             </span>
                           </div>
                           <div>
-                            <span className="text-zinc-500">Total Transactions:</span>{" "}
+                            <span className="text-zinc-500">
+                              Total Transactions:
+                            </span>{" "}
                             <span className="text-zinc-900">
-                              {(result.data as AddressResult).unspent_txouts?.length}
+                              {
+                                (result.data as AddressResult).unspent_txouts
+                                  ?.length
+                              }
                             </span>
                           </div>
                         </div>
                         <div className="mt-4 flex justify-start">
                           <button
-                            onClick={() => handleAddressClick((result.data as AddressResult).address)}
-                            className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                            onClick={() =>
+                              handleAddressClick(
+                                (result.data as AddressResult).address
+                              )
+                            }
+                            className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
                           >
                             View Details
                             <ArrowUpRight className="h-4 w-4" />
