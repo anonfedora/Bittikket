@@ -3,6 +3,7 @@ import { promisify } from "util";
 
 import {
   BitcoinCliConfig,
+  BitcoinNetwork,
   BlockInfo,
   BlockStats,
   MempoolEntry,
@@ -12,15 +13,22 @@ import {
   TransactionInfo,
   UnspentOutput,
 } from "@/types/bitcoin-cli";
+import {
+  RPC_HOST,
+  RPC_USER,
+  RPC_PASSWORD,
+  NETWORK,
+  RPC_PORT,
+} from "@/config/process";
 
 const execAsync = promisify(exec);
 
 const DEFAULT_CONFIG: BitcoinCliConfig = {
-  network: "regtest",
-  rpcuser: "polaruser",
-  rpcpassword: "polarpass",
-  rpcport: 18443,
-  rpchost: "127.0.0.1",
+  network: NETWORK as BitcoinNetwork,
+  rpcuser: RPC_USER,
+  rpcpassword: RPC_PASSWORD,
+  rpcport: Number(RPC_PORT),
+  rpchost: RPC_HOST,
 };
 
 export class BitcoinCLI {
@@ -41,7 +49,11 @@ export class BitcoinCLI {
   private async executeCommand<T>(command: string): Promise<T> {
     try {
       const { stdout, stderr } = await execAsync(
-        `${this.baseCommand} ${command}`
+        `${this.baseCommand} ${command}`,
+        {
+          maxBuffer: 10 * 1024 * 1024, // 10MB buffer
+          timeout: 30000, // 30 second timeout
+        }
       );
       if (stderr) {
         throw new Error(stderr);

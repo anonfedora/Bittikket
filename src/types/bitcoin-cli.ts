@@ -1,8 +1,10 @@
+export type BitcoinNetwork = "mainnet" | "testnet" | "regtest" | "signet";
+
 interface BitcoinCliConfig {
-  network: "mainnet" | "testnet" | "regtest";
+  network: BitcoinNetwork;
   rpcuser: string;
   rpcpassword: string;
-  rpcport: number;
+  rpcport?: number;
   rpchost: string;
 }
 
