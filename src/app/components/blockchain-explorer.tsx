@@ -549,7 +549,7 @@ export function BlockchainExplorer() {
         <form onSubmit={handleSearch} className="relative max-w-md">
           <Input
             type="search"
-            placeholder="Search block / transaction"
+            placeholder="Search block / transaction / address"
             className="bg-white border-zinc-200 text-zinc-900 min-w-md placeholder:text-zinc-400 pr-20"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
