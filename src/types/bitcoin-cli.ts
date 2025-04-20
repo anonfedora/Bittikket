@@ -7,6 +7,20 @@ interface BitcoinCliConfig {
   rpcport?: number;
   rpchost: string;
 }
+interface BlockchainInfo {
+  chain: string;
+  blocks: number;
+  headers: number;
+  bestblockhash: string;
+  difficulty: number;
+  mediantime: number;
+  verificationprogress: number;
+  initialblockdownload: boolean;
+  chainwork: string;
+  size_on_disk: number;
+  pruned: boolean;
+  warnings: string;
+}
 
 interface BlockInfo {
   hash: string;
@@ -208,4 +222,5 @@ export type {
   Network,
   PeerInfo,
   UnspentOutput,
+  BlockchainInfo,
 };

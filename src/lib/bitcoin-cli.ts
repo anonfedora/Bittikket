@@ -4,6 +4,7 @@ import { promisify } from "util";
 import {
   BitcoinCliConfig,
   BitcoinNetwork,
+  BlockchainInfo,
   BlockInfo,
   BlockStats,
   MempoolEntry,
@@ -43,7 +44,7 @@ export class BitcoinCLI {
   private buildBaseCommand(): string {
     const networkFlag =
       this.config.network === "mainnet" ? "" : `-${this.config.network}`;
-    return `bitcoin-cli ${networkFlag} -rpcconnect=${this.config.rpchost} -rpcuser=${this.config.rpcuser} -rpcpassword=${this.config.rpcpassword} -rpcport=${this.config.rpcport}`;
+    return `bitcoin-cli ${networkFlag} -rpcconnect=${this.config.rpchost} -rpcuser=${this.config.rpcuser} -rpcpassword=${this.config.rpcpassword} -rpcport=${this.config.rpcport} -rpcwallet=extheoisah`;
   }
 
   private async executeCommand<T>(command: string): Promise<T> {
@@ -216,6 +217,139 @@ export class BitcoinCLI {
     return this.executeCommand<UnspentOutput[]>(
       `listunspent ${minconf} ${maxconf}`
     );
+  }
+
+  async getBlockchainInfo(): Promise<BlockchainInfo> {
+    return this.executeCommand<BlockchainInfo>("getblockchaininfo");
+  }
+
+  // Address-related commands
+  async validateAddress(address: string): Promise<{
+    isvalid: boolean;
+    address: string;
+    scriptPubKey: string;
+    isscript: boolean;
+    iswitness: boolean;
+    witness_version?: number;
+    witness_program?: string;
+  }> {
+    return this.executeCommand(`validateaddress ${address}`);
+  }
+
+  async scanTxOutset(address: string): Promise<{
+    success: boolean;
+    total_amount: number;
+    txouts: number;
+    height: number;
+    bestblock: string;
+    unspents: Array<{
+      txid: string;
+      vout: number;
+      scriptPubKey: string;
+      desc: string;
+      amount: number;
+      height: number;
+    }>;
+  }> {
+    return this.executeCommand(`scantxoutset start '["addr(${address})"]'`);
+  }
+
+  async listReceivedByAddress(
+    address: string,
+    minconf = 1
+  ): Promise<
+    Array<{
+      address: string;
+      amount: number;
+      confirmations: number;
+      label: string;
+      txids: string[];
+    }>
+  > {
+    return this.executeCommand(
+      `listreceivedbyaddress ${minconf} true true "${address}"`
+    );
+  }
+
+  async getAddressOverview(address: string): Promise<{
+    address: string;
+    isvalid: boolean;
+    scriptPubKey: string;
+    isscript: boolean;
+    iswitness: boolean;
+    witness_version?: number;
+    witness_program?: string;
+    balance: number;
+    unspent_txouts: Array<{
+      txid: string;
+      vout: number;
+      amount: number;
+      height: number;
+    }>;
+  }> {
+    const addressInfo = await this.validateAddress(address);
+    if (!addressInfo.isvalid) {
+      throw new Error("Invalid address");
+    }
+
+    // Get unspent outputs and total balance
+    const scanResult = await this.scanTxOutset(address);
+
+    return {
+      ...addressInfo,
+      balance: scanResult?.total_amount || 0,
+      unspent_txouts: scanResult.unspents.map((utxo) => ({
+        txid: utxo.txid,
+        vout: utxo.vout,
+        amount: utxo.amount,
+        height: utxo.height,
+      })) || [],
+    };
+  }
+
+  async getAddressTransactions(
+    txids: string[],
+    page = 1,
+    pageSize = 10
+  ): Promise<{
+    transactions: TransactionInfo[];
+    total: number;
+  }> {
+    const start = (page - 1) * pageSize;
+    const end = start + pageSize;
+    const pageIds = txids.slice(start, end);
+    const transactions: TransactionInfo[] = [];
+
+    // Process transactions in smaller batches
+    const batchSize = 5;
+    for (let i = 0; i < pageIds.length; i += batchSize) {
+      const batch = pageIds.slice(i, i + batchSize);
+      try {
+        const batchResults = await Promise.all(
+          batch.map(async (txid) => {
+            try {
+              return await this.getRawTransaction(txid, 1);
+            } catch (error) {
+              console.error(`Failed to fetch transaction ${txid}:`, error);
+              return null;
+            }
+          })
+        );
+        
+        transactions.push(...batchResults.filter((tx): tx is TransactionInfo => tx !== null));
+
+        if (i + batchSize < pageIds.length) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      } catch (error) {
+        console.error(`Failed to process batch starting at index ${i}:`, error);
+      }
+    }
+
+    return {
+      transactions,
+      total: txids.length,
+    };
   }
 }
 

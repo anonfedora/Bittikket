@@ -1,45 +1,17 @@
 "use client";
 
-import { ArrowUpRight, ChevronLeft, ChevronRight, Copy } from "lucide-react";
+import { ArrowUpRight, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { CopyButton } from "@/components/copy-button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
-
-interface Transaction {
-  txid: string;
-  hash: string;
-  version: number;
-  size: number;
-  vsize: number;
-  weight: number;
-  locktime: number;
-  vin: Array<{
-    txid?: string;
-    vout?: number;
-    scriptSig?: {
-      asm: string;
-      hex: string;
-    };
-    sequence: number;
-    coinbase?: string;
-  }>;
-  vout: Array<{
-    value: number;
-    n: number;
-    scriptPubKey: {
-      asm: string;
-      hex: string;
-      type: string;
-      addresses?: string[];
-    };
-  }>;
-}
+import type { BlockInfo, TransactionInfo } from "@/types/bitcoin-cli";
 
 interface BlockData {
   height: number;
@@ -47,10 +19,15 @@ interface BlockData {
   timestamp: number;
   size: number;
   weight: number;
-  transactions: Transaction[];
+  transactions: TransactionInfo[];
   miner: string;
   difficulty: number;
   fees: number;
+}
+
+interface SearchResult {
+  type: "block" | "transaction" | "address";
+  data: BlockInfo | TransactionInfo | AddressResult;
 }
 
 interface ApiBlockData {
@@ -59,7 +36,7 @@ interface ApiBlockData {
   time: number;
   size: number;
   weight: number;
-  tx: Transaction[];
+  tx: TransactionInfo[];
   difficulty: number;
   stats?: {
     miner?: string;
@@ -88,19 +65,23 @@ interface MempoolData {
   };
 }
 
-const copyToClipboard = (text: string) => {
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text);
-    toast.success("Copied to clipboard");
-  } else {
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    document.body.appendChild(textarea);
-    textarea.select();
-    document.execCommand("copy");
-    document.body.removeChild(textarea);
-  }
-};
+interface AddressResult {
+  address: string;
+  isvalid: boolean;
+  scriptPubKey: string;
+  isscript: boolean;
+  iswitness: boolean;
+  witness_version?: number;
+  witness_program?: string;
+  balance: number;
+  unspent_txouts: Array<{
+    txid: string;
+    vout: number;
+    amount: number;
+    height: number;
+  }>;
+  transactions: TransactionInfo[];
+}
 
 function Block({
   block,
@@ -257,10 +238,7 @@ function BlockDetails({ block }: { block: BlockData | null }) {
                       >
                         {tx.txid?.slice(0, 10)}...{tx.txid?.slice(-10)}
                       </Link>
-                      <Copy
-                        onClick={() => copyToClipboard(tx.txid)}
-                        className="h-4 w-4 text-zinc-400 cursor-pointer hover:text-zinc-600"
-                      />
+                      <CopyButton text={tx.txid} />
                     </div>
                     <Link
                       href={`/tx/${tx.txid}`}
@@ -392,6 +370,9 @@ export function BlockchainExplorer() {
   const [mempoolData, setMempoolData] = useState<MempoolData | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(0);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
 
   async function fetchData() {
     try {
@@ -459,6 +440,56 @@ export function BlockchainExplorer() {
   // Calculate visible blocks based on window size
   const visibleBlocks = blocks;
 
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+
+    setIsSearching(true);
+    try {
+      const response = await fetch(
+        `/api/bitcoin/search?q=${encodeURIComponent(searchQuery.trim())}`
+      );
+      const data = await response.json();
+
+      if (response.ok) {
+        setSearchResults(data.results);
+        // If we found a block, select it
+        const blockResult = data.results.find(
+          (r: SearchResult) => r.type === "block"
+        );
+        if (blockResult) {
+          const block = blockResult.data as BlockInfo;
+          const fees = block.tx.reduce(
+            (sum, tx) =>
+              sum + tx.vout.reduce((voutSum, vout) => voutSum + vout.value, 0),
+            0
+          );
+          // Convert BlockInfo to BlockData
+          setSelectedBlock({
+            hash: block.hash,
+            height: block.height,
+            timestamp: block.time,
+            size: block.size,
+            weight: block.weight,
+            transactions: block.tx,
+            miner: "Unknown", // We could parse this from coinbase tx if needed
+            difficulty: block.difficulty,
+            fees: fees,
+          });
+        }
+      } else {
+        toast.error(data.error || "Search failed");
+        setSearchResults([]);
+      }
+    } catch (error) {
+      console.error("Search error:", error);
+      toast.error("Failed to perform search");
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="p-4 md:p-6">
@@ -474,13 +505,138 @@ export function BlockchainExplorer() {
   return (
     <div className="p-4 md:p-6">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-zinc-900">Bitcoin Blockchain</h1>
-        <Input
-          type="search"
-          placeholder="Search block / transaction / address"
-          className="max-w-sm bg-white border-zinc-200 text-zinc-900 placeholder:text-zinc-400"
-        />
+        <h1 className="text-2xl font-bold text-zinc-900">
+          Bitcoin Blockchain (signet)
+        </h1>
+        <form onSubmit={handleSearch} className="relative max-w-md">
+          <Input
+            type="search"
+            placeholder="Search block / transaction"
+            className="bg-white border-zinc-200 text-zinc-900 min-w-md placeholder:text-zinc-400 pr-20"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          <button
+            type="submit"
+            className={cn(
+              "absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1 text-sm bg-zinc-900 text-white rounded-md hover:bg-zinc-800",
+              isSearching && "opacity-50 cursor-not-allowed"
+            )}
+            disabled={isSearching}
+          >
+            {isSearching ? "..." : "Search"}
+          </button>
+        </form>
       </div>
+
+      {searchResults.length > 0 && searchResults[0].type !== "block" && (
+        <div className="mb-6 space-y-4">
+          {searchResults.map((result, index) => (
+            <Card key={index} className="p-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <Badge>{result.type === "transaction" ? "Transaction" : "Address"}</Badge>
+                  <div className="mt-2">
+                    {result.type === "transaction" && (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm text-zinc-500">Transaction ID:</p>
+                          <Link
+                            href={`/tx/${(result.data as TransactionInfo).txid}`}
+                            className="hover:underline cursor-pointer"
+                          >
+                            {(result.data as TransactionInfo).txid}
+                          </Link>
+                          <CopyButton text={(result.data as TransactionInfo).txid} />
+                        </div>
+                        <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                          <div>
+                            <span className="text-zinc-500">Size:</span>{" "}
+                            <span className="text-zinc-900">
+                              {(result.data as TransactionInfo).size} bytes
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-500">Weight:</span>{" "}
+                            <span className="text-zinc-900">
+                              {(result.data as TransactionInfo).weight} WU
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-500">Inputs:</span>{" "}
+                            <span className="text-zinc-900">
+                              {(result.data as TransactionInfo).vin.length}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-500">Outputs:</span>{" "}
+                            <span className="text-zinc-900">
+                              {(result.data as TransactionInfo).vout.length}
+                            </span>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                    {result.type === "address" && (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm text-zinc-500">Address:</p>
+                          <Link
+                            href={`/address/${(result.data as AddressResult).address}`}
+                            className="font-mono text-sm hover:text-blue-600"
+                          >
+                            {(result.data as AddressResult).address}
+                          </Link>
+                          <CopyButton text={(result.data as AddressResult).address} />
+                        </div>
+                        <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                          <div>
+                            <span className="text-zinc-500">Type:</span>{" "}
+                            <span className="text-zinc-900">
+                              {(result.data as AddressResult).iswitness
+                                ? `Witness v${(result.data as AddressResult).witness_version}`
+                                : (result.data as AddressResult).isscript
+                                ? "Script"
+                                : "Legacy"}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-500">Balance:</span>{" "}
+                            <span className="text-zinc-900 font-mono">
+                              {(result.data as AddressResult).balance.toFixed(8)} BTC
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-500">Unspent Outputs:</span>{" "}
+                            <span className="text-zinc-900">
+                              {(result.data as AddressResult).unspent_txouts.length}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-500">Total Transactions:</span>{" "}
+                            <span className="text-zinc-900">
+                              {(result.data as AddressResult).unspent_txouts?.length}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="mt-4 flex justify-start">
+                          <Link
+                            href={`/address/${(result.data as AddressResult).address}`}
+                            className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+                          >
+                            View Details
+                            <ArrowUpRight className="h-4 w-4" />
+                          </Link>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
 
       <div className="relative">
         <button
