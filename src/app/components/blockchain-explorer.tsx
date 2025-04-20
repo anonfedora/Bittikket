@@ -2,8 +2,9 @@
 
 import { ArrowUpRight, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -365,6 +366,7 @@ function MempoolStats({ mempoolData }: { mempoolData: MempoolData | null }) {
 }
 
 export function BlockchainExplorer() {
+  const router = useRouter();
   const [blocks, setBlocks] = useState<BlockData[]>([]);
   const [selectedBlock, setSelectedBlock] = useState<BlockData | null>(null);
   const [mempoolData, setMempoolData] = useState<MempoolData | null>(null);
@@ -373,6 +375,7 @@ export function BlockchainExplorer() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   async function fetchData() {
     try {
@@ -444,50 +447,84 @@ export function BlockchainExplorer() {
     e.preventDefault();
     if (!searchQuery.trim()) return;
 
+    // Abort any existing search request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Create a new AbortController for this request
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
     setIsSearching(true);
     try {
       const response = await fetch(
-        `/api/bitcoin/search?q=${encodeURIComponent(searchQuery.trim())}`
+        `/api/bitcoin/search?q=${encodeURIComponent(searchQuery.trim())}`,
+        {
+          signal: abortController.signal
+        }
       );
       const data = await response.json();
 
-      if (response.ok) {
-        setSearchResults(data.results);
-        // If we found a block, select it
-        const blockResult = data.results.find(
-          (r: SearchResult) => r.type === "block"
-        );
-        if (blockResult) {
-          const block = blockResult.data as BlockInfo;
-          const fees = block.tx.reduce(
-            (sum, tx) =>
-              sum + tx.vout.reduce((voutSum, vout) => voutSum + vout.value, 0),
-            0
+      // Only update state if this request wasn't aborted
+      if (!abortController.signal.aborted) {
+        if (response.ok) {
+          setSearchResults(data.results);
+          // If we found a block, select it
+          const blockResult = data.results.find(
+            (r: SearchResult) => r.type === "block"
           );
-          // Convert BlockInfo to BlockData
-          setSelectedBlock({
-            hash: block.hash,
-            height: block.height,
-            timestamp: block.time,
-            size: block.size,
-            weight: block.weight,
-            transactions: block.tx,
-            miner: "Unknown", // We could parse this from coinbase tx if needed
-            difficulty: block.difficulty,
-            fees: fees,
-          });
+          if (blockResult) {
+            const block = blockResult.data as BlockInfo;
+            const fees = block.tx.reduce(
+              (sum, tx) =>
+                sum + tx.vout.reduce((voutSum, vout) => voutSum + vout.value, 0),
+              0
+            );
+            // Convert BlockInfo to BlockData
+            setSelectedBlock({
+              hash: block.hash,
+              height: block.height,
+              timestamp: block.time,
+              size: block.size,
+              weight: block.weight,
+              transactions: block.tx,
+              miner: "Unknown", // We could parse this from coinbase tx if needed
+              difficulty: block.difficulty,
+              fees: fees,
+            });
+          }
+        } else {
+          toast.error(data.error || "Search failed");
+          setSearchResults([]);
         }
-      } else {
-        toast.error(data.error || "Search failed");
-        setSearchResults([]);
       }
     } catch (error) {
-      console.error("Search error:", error);
-      toast.error("Failed to perform search");
-      setSearchResults([]);
+      // Only show error if it's not an abort error
+      if (!abortController.signal.aborted) {
+        console.error("Search error:", error);
+        toast.error("Failed to perform search");
+        setSearchResults([]);
+      }
     } finally {
-      setIsSearching(false);
+      // Only update searching state if this request wasn't aborted
+      if (!abortController.signal.aborted) {
+        setIsSearching(false);
+      }
     }
+  };
+
+  // Cleanup abort controller on unmount
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
+
+  const handleAddressClick = (address: string) => {
+    router.push(`/address/${address}`);
   };
 
   if (loading) {
@@ -581,12 +618,12 @@ export function BlockchainExplorer() {
                       <>
                         <div className="flex items-center gap-2">
                           <p className="text-sm text-zinc-500">Address:</p>
-                          <Link
-                            href={`/address/${(result.data as AddressResult).address}`}
+                          <button
+                            onClick={() => handleAddressClick((result.data as AddressResult).address)}
                             className="font-mono text-sm hover:text-blue-600"
                           >
                             {(result.data as AddressResult).address}
-                          </Link>
+                          </button>
                           <CopyButton text={(result.data as AddressResult).address} />
                         </div>
                         <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
@@ -620,13 +657,13 @@ export function BlockchainExplorer() {
                           </div>
                         </div>
                         <div className="mt-4 flex justify-start">
-                          <Link
-                            href={`/address/${(result.data as AddressResult).address}`}
+                          <button
+                            onClick={() => handleAddressClick((result.data as AddressResult).address)}
                             className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
                           >
                             View Details
                             <ArrowUpRight className="h-4 w-4" />
-                          </Link>
+                          </button>
                         </div>
                       </>
                     )}
