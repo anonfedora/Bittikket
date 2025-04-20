@@ -12,12 +12,13 @@ import {
   LndInvoiceRequest,
 } from "@/types/lnd";
 
-// Default Polar configuration
 const DEFAULT_CONFIG: LndConfig = {
-  // Adjust these values based on your Polar setup
-  rpcServer: "localhost:10001",
-  tlsCertPath: "/Users/theophilus/.polar/networks/2/volumes/lnd/alice/tls.cert",
+  rpcServer: process.env.LND_RPC_SERVER || "localhost:10001",
+  tlsCertPath:
+    process.env.LND_CERT_PATH ||
+    "/Users/theophilus/.polar/networks/2/volumes/lnd/alice/tls.cert",
   macaroonPath:
+    process.env.LND_MACAROON_PATH ||
     "/Users/theophilus/.polar/networks/2/volumes/lnd/alice/data/chain/bitcoin/regtest/admin.macaroon",
 };
 
@@ -31,27 +32,47 @@ export class LndClient {
   }
 
   private buildServices(): LndServices {
-    // Load TLS certificate
-    const tlsCert = fs.readFileSync(this.config.tlsCertPath);
-    const sslCreds = grpc.credentials.createSsl(tlsCert);
+    let sslCreds;
+    let macaroon = "";
+    let credentials;
 
-    // Load macaroon
-    const macaroon = fs.readFileSync(this.config.macaroonPath).toString("hex");
-    const metadata = new grpc.Metadata();
-    metadata.add("macaroon", macaroon);
+    try {
+      // Try to load TLS certificate
+      const tlsCert = fs.readFileSync(this.config.tlsCertPath);
+      sslCreds = grpc.credentials.createSsl(tlsCert);
 
-    // Create metadata credentials
-    const macaroonCreds = grpc.credentials.createFromMetadataGenerator(
-      (_context, callback) => callback(null, metadata)
-    );
+      try {
+        // Try to load macaroon only if we have SSL credentials
+        macaroon = fs.readFileSync(this.config.macaroonPath).toString("hex");
+        const metadata = new grpc.Metadata();
+        metadata.add("macaroon", macaroon);
 
-    // Combine the credentials
-    const credentials = grpc.credentials.combineChannelCredentials(
-      sslCreds,
-      macaroonCreds
-    );
+        const macaroonCreds = grpc.credentials.createFromMetadataGenerator(
+          (_context, callback) => callback(null, metadata)
+        );
 
-    // Load the gRPC proto definitions for LND
+        // Combine the credentials only if we have both SSL and macaroon
+        credentials = grpc.credentials.combineChannelCredentials(
+          sslCreds,
+          macaroonCreds
+        );
+      } catch (error: unknown) {
+        const err = error as Error;
+        console.warn(
+          "Macaroon file not found, using SSL credentials only:",
+          err.message
+        );
+        credentials = sslCreds;
+      }
+    } catch (error: unknown) {
+      const err = error as Error;
+      console.warn(
+        "TLS certificate not found, using insecure credentials:",
+        err.message
+      );
+      credentials = grpc.credentials.createInsecure();
+    }
+
     const protoPath = path.resolve(process.cwd(), "src/lightning.proto");
     const packageDefinition = protoLoader.loadSync(protoPath, {
       keepCase: true,
@@ -69,7 +90,6 @@ export class LndClient {
       ) => LightningService;
     };
 
-    // Create gRPC clients
     const lightning = new lnrpc.Lightning(this.config.rpcServer, credentials);
 
     return {
@@ -85,33 +105,48 @@ export class LndClient {
     memo: string,
     expiry: number = 3600
   ): Promise<LndInvoice> {
-    const call = promisify<LndInvoiceRequest, LndInvoice>(
-      this.services.lightning.addInvoice
-    ).bind(this.services.lightning);
+    try {
+      const call = promisify<LndInvoiceRequest, LndInvoice>(
+        this.services.lightning.addInvoice
+      ).bind(this.services.lightning);
 
-    const invoice = await call({
-      value: amount,
-      memo: memo,
-      expiry: expiry,
-    });
+      const invoice = await call({
+        value: amount,
+        memo: memo,
+        expiry: expiry,
+      });
 
-    return invoice;
+      return invoice;
+    } catch (error) {
+      console.error("Error creating invoice:", error);
+      throw error;
+    }
   }
 
   // Check invoice payment status
   async checkInvoiceStatus(rHash: Buffer): Promise<LndInvoice> {
-    const call = promisify<{ r_hash: Buffer }, LndInvoice>(
-      this.services.lightning.lookupInvoice
-    ).bind(this.services.lightning);
-    return await call({ r_hash: rHash });
+    try {
+      const call = promisify<{ r_hash: Buffer }, LndInvoice>(
+        this.services.lightning.lookupInvoice
+      ).bind(this.services.lightning);
+      return await call({ r_hash: rHash });
+    } catch (error) {
+      console.error("Error checking invoice status:", error);
+      throw error;
+    }
   }
 
   // Get info about the node
   async getInfo(): Promise<NodeInfo> {
-    const call = promisify<Record<string, never>, NodeInfo>(
-      this.services.lightning.getInfo
-    ).bind(this.services.lightning);
-    return await call({});
+    try {
+      const call = promisify<Record<string, never>, NodeInfo>(
+        this.services.lightning.getInfo
+      ).bind(this.services.lightning);
+      return await call({});
+    } catch (error) {
+      console.error("Error getting node info:", error);
+      throw error;
+    }
   }
 }
 
