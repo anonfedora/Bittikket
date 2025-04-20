@@ -236,7 +236,7 @@ function BlockDetails({ block }: { block: BlockData | null }) {
               {formattedData.transactions.length === 1 ? "" : "s"}
             </Badge>
           </div>
-          <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
+          <div className="space-y-2 max-h-[calc(100vh-450px)] overflow-y-auto pr-2">
             {formattedData.transactions.map((tx) => {
               const totalOutput =
                 tx.vout?.reduce(
@@ -397,7 +397,7 @@ export function BlockchainExplorer() {
     try {
       const [blocksResponse, mempoolResponse] = await Promise.all([
         fetch(`/api/bitcoin/blocks?start=${currentPage}&limit=10`),
-        fetch('/api/bitcoin/mempool')
+        fetch("/api/bitcoin/mempool"),
       ]);
 
       const blocksData = await blocksResponse.json();
@@ -413,25 +413,25 @@ export function BlockchainExplorer() {
         transactions: block.tx || [],
         miner: block.stats?.miner || "Unknown",
         difficulty: block.difficulty,
-        fees: block.stats?.totalfee || 0
+        fees: block.stats?.totalfee || 0,
       }));
 
       // Transform mempool data
       const transformedMempool: MempoolData = {
         info: mempoolData.info,
-        transactions: mempoolData.transactions
+        transactions: mempoolData.transactions,
       };
 
       setBlocks(transformedBlocks);
       setMempoolData(transformedMempool);
-      
+
       // Set the first block as selected by default if none is selected
       if (!selectedBlock && transformedBlocks.length > 0) {
         setSelectedBlock(transformedBlocks[0]);
       }
     } catch (error) {
-      console.error('Error fetching data:', error);
-      toast.error('Failed to fetch blockchain data');
+      console.error("Error fetching data:", error);
+      toast.error("Failed to fetch blockchain data");
     } finally {
       setLoading(false);
     }
@@ -442,16 +442,18 @@ export function BlockchainExplorer() {
     // Set up polling every 30 seconds
     const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
+    // we need to disable this because we want to fetch data on every page load
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage]);
 
   const handlePrevious = () => {
     if (currentPage > 0) {
-      setCurrentPage(prev => prev - 1);
+      setCurrentPage((prev) => prev - 1);
     }
   };
 
   const handleNext = () => {
-    setCurrentPage(prev => prev + 1);
+    setCurrentPage((prev) => prev + 1);
   };
 
   // Calculate visible blocks based on window size
@@ -486,7 +488,9 @@ export function BlockchainExplorer() {
           disabled={currentPage === 0}
           className={cn(
             "absolute left-0 top-1/2 -translate-y-1/2 -translate-x-4 p-2 rounded-full bg-white border border-zinc-200 shadow-sm hover:border-zinc-300 z-10",
-            currentPage === 0 && "opacity-50 cursor-not-allowed"
+            currentPage === 0
+              ? "opacity-50 cursor-not-allowed"
+              : "cursor-pointer"
           )}
         >
           <ChevronLeft className="h-4 w-4 text-zinc-600" />
@@ -507,7 +511,7 @@ export function BlockchainExplorer() {
 
         <button
           onClick={handleNext}
-          className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-4 p-2 rounded-full bg-white border border-zinc-200 shadow-sm hover:border-zinc-300 z-10"
+          className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-4 p-2 rounded-full bg-white border border-zinc-200 shadow-sm hover:border-zinc-300 z-10 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
         >
           <ChevronRight className="h-4 w-4 text-zinc-600" />
         </button>
@@ -517,13 +521,13 @@ export function BlockchainExplorer() {
         <TabsList className="bg-white border border-zinc-200">
           <TabsTrigger
             value="block"
-            className="data-[state=active]:bg-zinc-100 data-[state=active]:text-zinc-900"
+            className="data-[state=active]:bg-zinc-100 data-[state=active]:text-zinc-900 cursor-pointer hover:bg-zinc-50"
           >
             Block Details
           </TabsTrigger>
           <TabsTrigger
             value="mempool"
-            className="data-[state=active]:bg-zinc-100 data-[state=active]:text-zinc-900"
+            className="data-[state=active]:bg-zinc-100 data-[state=active]:text-zinc-900 cursor-pointer hover:bg-zinc-50"
           >
             Mempool
           </TabsTrigger>
