@@ -50,6 +50,13 @@ export interface LightningService extends grpc.Client {
     args: { r_hash: Buffer },
     callback: (error: Error | null, response: LndInvoice) => void
   ): void;
+  subscribeInvoices(
+    args: Record<string, never>
+  ): grpc.ClientReadableStream<LndInvoice>;
+  decodePayReq(
+    args: { pay_req: string },
+    callback: (error: Error | null, response: any) => void
+  ): void;
 }
 
 export interface NodeInfo {

@@ -19,8 +19,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Bitcoin LN Explorer",
-  description: "Bitcoin LN Explorer",
+  title: "BitTicket",
+  description: "BitTicket",
 };
 
 export default function RootLayout({

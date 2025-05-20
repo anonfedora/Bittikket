@@ -25,10 +25,12 @@ const DEFAULT_CONFIG: LndConfig = {
 export class LndClient {
   private services: LndServices;
   private config: LndConfig;
+  private invoiceSubscriptions: Map<string, (invoice: LndInvoice) => void>;
 
   constructor(config: LndConfig = DEFAULT_CONFIG) {
     this.config = config;
     this.services = this.buildServices();
+    this.invoiceSubscriptions = new Map();
   }
 
   private buildServices(): LndServices {
@@ -147,6 +149,38 @@ export class LndClient {
       console.error("Error getting node info:", error);
       throw error;
     }
+  }
+
+  // Subscribe to invoice updates
+  subscribeToInvoices(callback: (invoice: LndInvoice) => void): () => void {
+    const subscriptionId = Math.random().toString(36).substring(7);
+    this.invoiceSubscriptions.set(subscriptionId, callback);
+
+    const call = this.services.lightning.subscribeInvoices({});
+    call.on('data', (invoice: LndInvoice) => {
+      this.invoiceSubscriptions.forEach(cb => cb(invoice));
+    });
+    call.on('error', (error) => {
+      console.error('Error in invoice subscription:', error);
+    });
+
+    return () => {
+      this.invoiceSubscriptions.delete(subscriptionId);
+      call.cancel();
+    };
+  }
+
+  // Decode a payment request (bolt11)
+  async decodePayReq(payReq: string): Promise<any> {
+    return new Promise((resolve, reject) => {
+      this.services.lightning.decodePayReq(
+        { pay_req: payReq },
+        (err: Error | null, res: any) => {
+          if (err) return reject(err);
+          resolve(res);
+        }
+      );
+    });
   }
 }
 

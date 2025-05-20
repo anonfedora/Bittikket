@@ -26,7 +26,7 @@ export function AppSidebar() {
       <div className="flex h-14 items-center border-b border-zinc-200 px-4">
         <Link href="/" className="flex items-center space-x-2">
           <Bolt className="h-6 w-6 text-zinc-900" />
-          <span className="font-semibold text-zinc-900">Bitcoin LN Sandbox</span>
+          <span className="font-semibold text-zinc-900">BitTicket</span>
         </Link>
       </div>
 
