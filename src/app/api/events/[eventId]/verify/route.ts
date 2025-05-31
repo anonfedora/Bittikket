@@ -6,14 +6,15 @@ interface VerifiedTicket {
   eventTitle: string;
   eventDate: string;
   status: string;
+  invoiceStatus: string;
 }
 
 export async function POST(
   request: NextRequest,
-  context: { params: { eventId: string } }
+  context: { params: Promise<{ eventId: string }> }
 ): Promise<Response> {
   try {
-    const { eventId } = context.params;
+    const { eventId } = await context.params;
     const { ticketId } = await request.json();
 
     if (!ticketId) {
@@ -23,6 +24,7 @@ export async function POST(
       );
     }
 
+    // Join with events table to get event details
     const ticket = await Promise.resolve(
       db.prepare(`
         SELECT t.*, e.title as eventTitle, e.date as eventDate
@@ -39,9 +41,9 @@ export async function POST(
       );
     }
 
-    if (ticket.status !== 'confirmed') {
+    if (ticket.invoiceStatus !== 'paid') {
       return Response.json(
-        { error: "Ticket is not confirmed" },
+        { error: "Ticket payment is not confirmed" },
         { status: 400 }
       );
     }
@@ -52,7 +54,8 @@ export async function POST(
         id: ticket.id,
         eventTitle: ticket.eventTitle,
         eventDate: ticket.eventDate,
-        status: ticket.status
+        status: ticket.status,
+        invoiceStatus: ticket.invoiceStatus
       }
     });
   } catch (error) {

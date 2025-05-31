@@ -6,10 +6,23 @@ import { Event, Ticket } from "@/types/event";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { format } from "date-fns";
-import { Calendar, Ticket as TicketIcon, Loader2, CheckCircle2 } from "lucide-react";
+import { Calendar, Ticket as TicketIcon, Loader2, CheckCircle2, Trash2, QrCode, BarChart3, Users } from "lucide-react";
 import Link from "next/link";
 import PurchaseTickets from "@/components/PurchaseTickets";
 import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 
 export default function EventDetailsPage({
   params,
@@ -29,32 +42,34 @@ export default function EventDetailsPage({
   const [pollError, setPollError] = useState<string | null>(null);
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const router = useRouter();
 
-  const fetchEventAndTickets = async () => {
-    try {
+    const fetchEventAndTickets = async () => {
+      try {
       setIsRefreshing(true);
-      setError(null);
+        setError(null);
 
-      const response = await fetch(`/api/events/${eventId}`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch event');
-      }
-      const eventData = await response.json();
-      setEvent(eventData);
+        const response = await fetch(`/api/events/${eventId}`);
+        if (!response.ok) {
+          throw new Error('Failed to fetch event');
+        }
+        const eventData = await response.json();
+        setEvent(eventData);
 
-      const ticketsResponse = await fetch(`/api/events/${eventId}/tickets`);
-      if (!ticketsResponse.ok) {
-        throw new Error('Failed to fetch tickets');
-      }
-      const ticketsData = await ticketsResponse.json();
-      setTickets(ticketsData);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
-    } finally {
-      setIsLoading(false);
+        const ticketsResponse = await fetch(`/api/events/${eventId}/tickets`);
+        if (!ticketsResponse.ok) {
+          throw new Error('Failed to fetch tickets');
+        }
+        const ticketsData = await ticketsResponse.json();
+        setTickets(ticketsData);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'An error occurred');
+      } finally {
+        setIsLoading(false);
       setIsRefreshing(false);
-    }
-  };
+      }
+    };
 
   useEffect(() => {
     fetchEventAndTickets();
@@ -134,6 +149,27 @@ export default function EventDetailsPage({
     }
   };
 
+  const handleDelete = async () => {
+    try {
+      setIsDeleting(true);
+      const response = await fetch(`/api/events/${eventId}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to delete event');
+      }
+
+      toast.success('Event deleted successfully');
+      router.push('/events');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to delete event');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -165,24 +201,94 @@ export default function EventDetailsPage({
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">{event.title}</h1>
-          <p className="text-gray-600">{event.description}</p>
-          <div className="mt-4 flex items-center space-x-4 text-sm text-gray-500">
-            <div className="flex items-center">
-              <Calendar className="h-4 w-4 mr-2" />
-              {format(new Date(event.date), "PPP p")}
-            </div>
-            <div className="flex items-center">
-              <TicketIcon className="h-4 w-4 mr-2" />
-              {event.ticketPrice} sats
-            </div>
-            <div className="flex items-center">
-              <span className="mr-2">Available:</span>
-              {availableTickets} tickets
+      <div className="max-w-4xl mx-auto space-y-8">
+        <div className="flex justify-between items-center">
+          <h1 className="text-3xl font-bold">{event.title}</h1>
+          <div className="flex gap-4">
+            <Link
+              href={`/events/${eventId}/analytics`}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              <BarChart3 className="w-4 h-4" />
+              View Analytics
+            </Link>
+            <Link
+              href={`/events/${eventId}/bulk`}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+            >
+              <Users className="w-4 h-4" />
+              Bulk Operations
+            </Link>
+            <Button
+              variant="outline"
+              className="flex items-center gap-2"
+              onClick={() => window.location.href = `/events/${eventId}/check-in`}
+            >
+              <QrCode className="h-4 w-4" />
+              Check In
+            </Button>
+            <Button
+              variant="outline"
+              className="flex items-center gap-2"
+              onClick={() => window.location.href = `/events/${eventId}/tickets/new`}
+            >
+              <TicketIcon className="h-4 w-4" />
+              Buy Tickets
+            </Button>
+          </div>
+        </div>
+        <div className="mb-8 flex justify-between items-start">
+          <div>
+            <p className="text-gray-600">{event.description}</p>
+            <div className="mt-4 flex items-center space-x-4 text-sm text-gray-500">
+              <div className="flex items-center">
+                <Calendar className="h-4 w-4 mr-2" />
+                {format(new Date(event.date), "PPP p")}
+              </div>
+              <div className="flex items-center">
+                <TicketIcon className="h-4 w-4 mr-2" />
+                {event.ticketPrice} sats
+              </div>
+              <div className="flex items-center">
+                <span className="mr-2">Available:</span>
+                {availableTickets} tickets
+              </div>
             </div>
           </div>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" className="flex items-center gap-2">
+                <Trash2 className="w-4 h-4" />
+                Delete Event
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This action cannot be undone. This will permanently delete the event
+                  and all associated tickets.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleDelete}
+                  disabled={isDeleting}
+                  className="bg-red-600 hover:bg-red-700"
+                >
+                  {isDeleting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Deleting...
+                    </>
+                  ) : (
+                    'Delete Event'
+                  )}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -196,9 +302,9 @@ export default function EventDetailsPage({
 
             {/* Lightning Invoice Payment Section */}
             <Card className="mt-8">
-              <CardHeader>
+            <CardHeader>
                 <CardTitle>Pay for Ticket with Lightning Invoice</CardTitle>
-              </CardHeader>
+            </CardHeader>
               <CardContent>
                 <form onSubmit={handleDecodeInvoice} className="space-y-4">
                   <Input
@@ -223,17 +329,17 @@ export default function EventDetailsPage({
                     <div className="flex items-center">
                       <CheckCircle2 className="h-6 w-6 mr-2" />
                       Payment received! Your ticket will be issued shortly.
-                    </div>
+              </div>
                     {claiming && (
                       <div className="mt-2 text-gray-600">Claiming your ticket...</div>
                     )}
                     {claimError && (
                       <div className="mt-2 text-red-600">{claimError}</div>
                     )}
-                  </div>
+              </div>
                 )}
-              </CardContent>
-            </Card>
+            </CardContent>
+          </Card>
           </div>
 
           <Card>

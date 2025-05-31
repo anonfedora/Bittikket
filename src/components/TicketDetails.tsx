@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Ticket } from '@/types/event';
 import { QRCodeSVG } from 'qrcode.react';
 import { useRouter } from 'next/navigation';
+import { TicketQRCode } from './TicketQRCode';
 
 interface TicketDetailsProps {
   ticket: Ticket;
@@ -83,6 +84,39 @@ export default function TicketDetails({ ticket, eventId }: TicketDetailsProps) {
           </div>
         )}
 
+        {/* Ticket QR Code for Verification */}
+        {ticket.status === "valid" && (
+          <div className="border-t pt-4">
+            <h3 className="text-lg font-semibold mb-4">Ticket QR Code</h3>
+            <div className="flex flex-col items-center space-y-4">
+              <TicketQRCode ticketId={ticket.id} eventId={eventId} />
+              <p className="text-sm text-gray-600">
+                Show this QR code at the event entrance for verification
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Seat Number (only show if seatNumber is not null) */}
+        {ticket.seatNumber && (
+          <div className="border-t pt-4">
+            <span className="text-sm font-medium text-gray-500">Seat Number</span>
+            <p className="mt-1">
+              {ticket.seatNumber}
+            </p>
+          </div>
+        )}
+
+        {/* Category (only show if category is not null) */}
+        {ticket.category && (
+          <div className="border-t pt-4">
+            <span className="text-sm font-medium text-gray-500">Category</span>
+            <p className="mt-1">
+              {ticket.category}
+            </p>
+          </div>
+        )}
+
         {/* Error Message */}
         {error && (
           <div className="mt-4 p-4 bg-red-50 text-red-700 rounded-md">
@@ -97,6 +131,17 @@ export default function TicketDetails({ ticket, eventId }: TicketDetailsProps) {
             {new Date(ticket.createdAt).toLocaleString()}
           </p>
         </div>
+
+        {/* Check-in Time (only show if checkedInAt is not null) */}
+        {ticket.checkedInAt && (
+          <div className="border-t pt-4">
+            <span className="text-sm font-medium text-gray-500">Checked In</span>
+            <p className="mt-1">
+              {new Date(ticket.checkedInAt).toLocaleString()}
+            </p>
+          </div>
+        )}
+
       </div>
     </div>
   );

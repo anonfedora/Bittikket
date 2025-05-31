@@ -16,6 +16,9 @@ export interface Ticket {
   invoiceId?: string;
   invoiceRequest?: string;
   invoiceStatus?: 'pending' | 'paid' | 'expired';
+  checkedInAt?: string | null;
+  seatNumber?: string | null;
+  category?: string | null;
   ownerAddress: string;
   transferHistory: TicketTransfer[];
 }

@@ -24,6 +24,9 @@ db.exec(`
     invoiceId TEXT,
     invoiceRequest TEXT,
     invoiceStatus TEXT CHECK(invoiceStatus IN ('pending', 'paid', 'expired')),
+    checkedInAt TEXT,
+    seatNumber TEXT,
+    category TEXT,
     FOREIGN KEY (eventId) REFERENCES events(id)
   );
 `);

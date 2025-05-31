@@ -63,7 +63,7 @@ export async function POST(
   try {
     const { eventId } = await context.params;
     const body = await request.json();
-    const { quantity = 1 } = body;
+    const { quantity = 1, seatNumber = null, category = null } = body;
 
     // Start a transaction
     const transaction = db.transaction(async () => {
@@ -96,16 +96,19 @@ export async function POST(
         createdAt: new Date().toISOString(),
         invoiceId: invoice.id,
         invoiceRequest: invoice.request,
-        invoiceStatus: "pending" as const
+        invoiceStatus: "pending" as const,
+        seatNumber: seatNumber,
+        category: category,
       }));
 
       // Insert tickets
       const insertTicket = db.prepare(`
         INSERT INTO tickets (
           id, eventId, status, createdAt, 
-          invoiceId, invoiceRequest, invoiceStatus
+          invoiceId, invoiceRequest, invoiceStatus, 
+          seatNumber, category
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       for (const ticket of newTickets) {
@@ -116,7 +119,9 @@ export async function POST(
           ticket.createdAt,
           ticket.invoiceId,
           ticket.invoiceRequest,
-          ticket.invoiceStatus
+          ticket.invoiceStatus,
+          ticket.seatNumber,
+          ticket.category
         );
       }
 
