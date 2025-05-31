@@ -1,45 +1,42 @@
 import { NextResponse } from "next/server";
-import { bitcoin } from "@/lib/bitcoin";
+import BitcoinCLI from "@/lib/bitcoin-cli";
+
+const bitcoin = new BitcoinCLI();
 
 export async function GET() {
   try {
-    const [networkInfo, walletInfo] = await Promise.all([
+    const [networkInfo, blockCount, difficulty, chainTips] = await Promise.all([
       bitcoin.getNetworkInfo(),
-      bitcoin.getWalletInfo(),
+      bitcoin.getBlockCount(),
+      bitcoin.getDifficulty(),
+      bitcoin.getChainTips(),
     ]);
 
+    // Get the best block hash and its details
+    const bestBlockHash = await bitcoin.getBestBlockHash();
+    const bestBlock = await bitcoin.getBlock(bestBlockHash);
+
     return NextResponse.json({
-      status: "success",
-      data: {
-        network: {
-          version: networkInfo.version,
-          subversion: networkInfo.subversion,
-          connections: networkInfo.connections,
-          networkActive: networkInfo.networkactive,
-          networks: networkInfo.networks,
-          warnings: networkInfo.warnings,
-        },
-        wallet: {
-          balance: walletInfo.balance,
-          unconfirmedBalance: walletInfo.unconfirmed_balance,
-          immatureBalance: walletInfo.immature_balance,
-          txCount: walletInfo.txcount,
-          walletName: walletInfo.walletname,
-          walletVersion: walletInfo.walletversion,
-          privateKeysEnabled: walletInfo.private_keys_enabled,
-        },
-      },
+      networks: networkInfo.networks,
+      version: networkInfo.version,
+      protocolVersion: networkInfo.protocolversion,
+      blocks: blockCount,
+      bestBlockHash,
+      bestBlockHeight: bestBlock.height,
+      bestBlockTime: bestBlock.time,
+      difficulty,
+      connections: networkInfo.connections,
+      chainTips: chainTips.map(tip => ({
+        height: tip.height,
+        hash: tip.hash,
+        branchLen: tip.branchlen,
+        status: tip.status,
+      })),
     });
   } catch (error) {
-    console.error("Error fetching Bitcoin info:", error);
+    console.error("Error fetching blockchain info:", error);
     return NextResponse.json(
-      {
-        status: "error",
-        message:
-          error instanceof Error
-            ? error.message
-            : "Failed to fetch Bitcoin info",
-      },
+      { error: "Failed to fetch blockchain info" },
       { status: 500 }
     );
   }

@@ -2,8 +2,7 @@ import Client, {
   ClientConfig,
   TransactionDetails,
   UnspentTransaction,
-  TransactionInput,
-  TransactionOutput,
+  TxInput,
   SignedTransaction,
   Block,
   AddressValidation,
@@ -11,26 +10,49 @@ import Client, {
   NetworkInfo,
   PeerInfo,
   MempoolInfo,
-  RawMempool
+  RawMempool,
+  TransactionInfo,
 } from "bitcoin-core";
 
 export interface BitcoinConfig extends ClientConfig {
-  network: "mainnet" | "testnet" | "regtest";
+  network: "mainnet" | "testnet" | "regtest" | "signet";
 }
 
-// Default Polar configuration for Bitcoin Core
+// Default configuration for Bitcoin Core
 const DEFAULT_CONFIG: BitcoinConfig = {
-  network: "regtest",
-  username: "polaruser",
-  password: "polarpass",
-  host: "http://127.0.0.1:18443",
-  port: 18443, // Default Polar regtest RPC port
+  network: "signet",
+  username: "btrustbuildersrpc",
+  password: "btrustbuilderspass",
+  host: "165.22.121.70",
+  port: 38332,
   timeout: 30000,
-  version: "0.28.0"
+  // version: "28.0.0",
 };
 
 export class BitcoinClient {
-  private client: Client;
+  // Use a more specific type assertion that includes all the methods we need
+  private client: Client & {
+    getBlockCount(): Promise<number>;
+    getNewAddress(label?: string, type?: "legacy" | "p2sh-segwit" | "bech32"): Promise<string>;
+    sendToAddress(address: string, amount: number, comment?: string): Promise<string>;
+    generateToAddress(blocks: number, address: string): Promise<string[]>;
+    getTransaction(txid: string): Promise<TransactionDetails>;
+    getBalance(minconf?: number): Promise<number>;
+    listUnspent(minconf?: number, maxconf?: number): Promise<UnspentTransaction[]>;
+    createRawTransaction(inputs: TxInput[], outputs: Record<string, number>): Promise<string>;
+    signRawTransactionWithWallet(txHex: string): Promise<SignedTransaction>;
+    sendRawTransaction(txHex: string): Promise<string>;
+    getBlock(hash: string, verbosity?: number): Promise<Block>;
+    getBlockHash(height: number): Promise<string>;
+    validateAddress(address: string): Promise<AddressValidation>;
+    listTransactions(count?: number, skip?: number): Promise<TransactionDetails[]>;
+    getWalletInfo(): Promise<WalletInfo>;
+    getPeerInfo(): Promise<PeerInfo[]>;
+    getNetworkInfo(): Promise<NetworkInfo>;
+    getMempoolInfo(): Promise<MempoolInfo>;
+    getRawMempool(verbose?: boolean): Promise<RawMempool>;
+    getRawTransaction(txid: string, verbose?: boolean): Promise<string | TransactionInfo>;
+  };
   readonly network: string;
 
   constructor(config: Partial<BitcoinConfig> = {}) {
@@ -38,11 +60,11 @@ export class BitcoinClient {
       ...DEFAULT_CONFIG,
       ...config,
     };
-    console.log('Initializing Bitcoin client with config:', {
+    console.log("Initializing Bitcoin client with config:", {
       ...finalConfig,
-      password: '******' // Hide password in logs
+      password: "******", // Hide password in logs
     });
-    this.client = new Client(finalConfig);
+    this.client = new Client(finalConfig) as Client & typeof this.client;
     this.network = finalConfig.network;
   }
 
@@ -123,8 +145,8 @@ export class BitcoinClient {
    * @param outputs - Transaction outputs
    */
   async createRawTransaction(
-    inputs: TransactionInput[],
-    outputs: TransactionOutput
+    inputs: TxInput[],
+    outputs: Record<string, number>
   ): Promise<string> {
     return this.client.createRawTransaction(inputs, outputs);
   }
@@ -190,12 +212,12 @@ export class BitcoinClient {
 
   async getNetworkInfo(): Promise<NetworkInfo> {
     try {
-      console.log('Fetching network info...');
+      console.log("Fetching network info...");
       const info = await this.client.getNetworkInfo();
-      console.log('Network info received:', info);
+      console.log("Network info received:", info);
       return info;
     } catch (error) {
-      console.error('Error in getNetworkInfo:', error);
+      console.error("Error in getNetworkInfo:", error);
       throw error;
     }
   }
@@ -213,7 +235,10 @@ export class BitcoinClient {
    * @param txid - Transaction ID
    * @param verbose - Whether to return detailed transaction info
    */
-  async getRawTransaction(txid: string, verbose = true): Promise<any> {
+  async getRawTransaction(
+    txid: string,
+    verbose = true
+  ): Promise<string | TransactionInfo> {
     return this.client.getRawTransaction(txid, verbose);
   }
 }

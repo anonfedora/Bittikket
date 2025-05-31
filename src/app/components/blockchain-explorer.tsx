@@ -1,57 +1,18 @@
 "use client";
 
-import { ArrowUpRight, ChevronLeft, ChevronRight, Copy } from "lucide-react";
+import { ArrowUpRight, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { CopyButton } from "@/components/copy-button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
-
-interface Transaction {
-  txid: string;
-  hash: string;
-  version: number;
-  size: number;
-  vsize: number;
-  weight: number;
-  locktime: number;
-  vin: Array<{
-    txid?: string;
-    vout?: number;
-    scriptSig?: {
-      asm: string;
-      hex: string;
-    };
-    sequence: number;
-    coinbase?: string;
-  }>;
-  vout: Array<{
-    value: number;
-    n: number;
-    scriptPubKey: {
-      asm: string;
-      hex: string;
-      type: string;
-      addresses?: string[];
-    };
-  }>;
-}
-
-interface BlockApiResponse {
-  height: number;
-  hash: string;
-  time: number;
-  size: number;
-  weight?: number;
-  tx?: Transaction[];
-  miner?: string;
-  difficulty: number;
-  fees?: number;
-}
+import type { BlockInfo, TransactionInfo } from "@/types/bitcoin-cli";
 
 interface BlockData {
   height: number;
@@ -59,10 +20,29 @@ interface BlockData {
   timestamp: number;
   size: number;
   weight: number;
-  transactions: Transaction[];
+  transactions: TransactionInfo[];
   miner: string;
   difficulty: number;
   fees: number;
+}
+
+interface SearchResult {
+  type: "block" | "transaction" | "address";
+  data: BlockInfo | TransactionInfo | AddressResult;
+}
+
+interface ApiBlockData {
+  height: number;
+  hash: string;
+  time: number;
+  size: number;
+  weight: number;
+  tx: TransactionInfo[];
+  difficulty: number;
+  stats?: {
+    miner?: string;
+    totalfee?: number;
+  };
 }
 
 interface MempoolData {
@@ -86,19 +66,23 @@ interface MempoolData {
   };
 }
 
-const copyToClipboard = (text: string) => {
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text);
-    toast.success("Copied to clipboard");
-  } else {
-    const textarea = document.createElement("textarea");
-    textarea.value = text;
-    document.body.appendChild(textarea);
-    textarea.select();
-    document.execCommand("copy");
-    document.body.removeChild(textarea);
-  }
-};
+interface AddressResult {
+  address: string;
+  isvalid: boolean;
+  scriptPubKey: string;
+  isscript: boolean;
+  iswitness: boolean;
+  witness_version?: number;
+  witness_program?: string;
+  balance: number;
+  unspent_txouts: Array<{
+    txid: string;
+    vout: number;
+    amount: number;
+    height: number;
+  }>;
+  transactions: TransactionInfo[];
+}
 
 function Block({
   block,
@@ -234,7 +218,7 @@ function BlockDetails({ block }: { block: BlockData | null }) {
               {formattedData.transactions.length === 1 ? "" : "s"}
             </Badge>
           </div>
-          <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
+          <div className="space-y-2 max-h-[calc(100vh-450px)] overflow-y-auto pr-2">
             {formattedData.transactions.map((tx) => {
               const totalOutput =
                 tx.vout?.reduce(
@@ -255,10 +239,7 @@ function BlockDetails({ block }: { block: BlockData | null }) {
                       >
                         {tx.txid?.slice(0, 10)}...{tx.txid?.slice(-10)}
                       </Link>
-                      <Copy
-                        onClick={() => copyToClipboard(tx.txid)}
-                        className="h-4 w-4 text-zinc-400 cursor-pointer hover:text-zinc-600"
-                      />
+                      <CopyButton text={tx.txid} />
                     </div>
                     <Link
                       href={`/tx/${tx.txid}`}
@@ -385,113 +366,167 @@ function MempoolStats({ mempoolData }: { mempoolData: MempoolData | null }) {
 }
 
 export function BlockchainExplorer() {
+  const router = useRouter();
   const [blocks, setBlocks] = useState<BlockData[]>([]);
   const [selectedBlock, setSelectedBlock] = useState<BlockData | null>(null);
-  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 6 });
   const [mempoolData, setMempoolData] = useState<MempoolData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  async function fetchData() {
+    try {
+      const [blocksResponse, mempoolResponse] = await Promise.all([
+        fetch(`/api/bitcoin/blocks?start=${currentPage}&limit=10`),
+        fetch("/api/bitcoin/mempool"),
+      ]);
+
+      const blocksData = await blocksResponse.json();
+      const mempoolData = await mempoolResponse.json();
+
+      // Transform block data to match UI expectations
+      const transformedBlocks = blocksData.map((block: ApiBlockData) => ({
+        height: block.height,
+        hash: block.hash,
+        timestamp: block.time,
+        size: block.size,
+        weight: block.weight,
+        transactions: block.tx || [],
+        miner: block.stats?.miner || "Unknown",
+        difficulty: block.difficulty,
+        fees: block.stats?.totalfee || 0,
+      }));
+
+      // Transform mempool data
+      const transformedMempool: MempoolData = {
+        info: mempoolData.info,
+        transactions: mempoolData.transactions,
+      };
+
+      setBlocks(transformedBlocks);
+      setMempoolData(transformedMempool);
+
+      // Set the first block as selected by default if none is selected
+      if (!selectedBlock && transformedBlocks.length > 0) {
+        setSelectedBlock(transformedBlocks[0]);
+      }
+    } catch (error) {
+      console.error("Error fetching data:", error);
+      toast.error("Failed to fetch blockchain data");
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    async function fetchData() {
-      try {
-        // Fetch latest blocks (get last 10 blocks)
-        const blockResponse = await fetch("/api/bitcoin/blocks?limit=10");
-        const blockData = await blockResponse.json();
-        if (blockData.status === "success") {
-          const fetchedBlocks = blockData.data.map(
-            (block: BlockApiResponse) => ({
-              height: block.height,
-              hash: block.hash,
-              timestamp: block.time,
-              size: block.size,
-              weight: block.weight || 0,
-              transactions: block.tx || [],
-              miner: block.miner || "Unknown",
-              difficulty: block.difficulty,
-              fees: block.fees || 0,
-            })
-          );
-
-          setBlocks(fetchedBlocks);
-          if (!selectedBlock) {
-            setSelectedBlock(fetchedBlocks[0]);
-          }
-        }
-
-        // Fetch mempool data
-        const mempoolResponse = await fetch("/api/bitcoin/mempool");
-        const mempoolData = await mempoolResponse.json();
-        if (mempoolData.status === "success") {
-          setMempoolData(mempoolData.data);
-        }
-      } catch (error) {
-        console.error("Error fetching blockchain data:", error);
-      } finally {
-        setLoading(false);
-      }
-    }
-
     fetchData();
-    const interval = setInterval(fetchData, 30000); // Refresh every 30 seconds
+    // Set up polling every 30 seconds
+    const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
-  }, [selectedBlock]); // Add selectedBlock to dependencies
+    // we need to disable this because we want to fetch data on every page load
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPage]);
 
   const handlePrevious = () => {
-    if (visibleRange.start > 0) {
-      setVisibleRange({
-        start: visibleRange.start - 1,
-        end: visibleRange.end - 1,
-      });
+    if (currentPage > 0) {
+      setCurrentPage((prev) => prev - 1);
     }
   };
 
   const handleNext = () => {
-    if (visibleRange.end < blocks.length) {
-      setVisibleRange({
-        start: visibleRange.start + 1,
-        end: visibleRange.end + 1,
-      });
-    }
+    setCurrentPage((prev) => prev + 1);
   };
 
-  // Add function to load more blocks
-  const loadMoreBlocks = async () => {
-    if (blocks.length === 0) return;
+  // Calculate visible blocks based on window size
+  const visibleBlocks = blocks;
 
-    const lastBlock = blocks[blocks.length - 1];
+  const handleSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+
+    // Abort any existing search request
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Create a new AbortController for this request
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
+    setIsSearching(true);
     try {
       const response = await fetch(
-        `/api/bitcoin/blocks?startHeight=${lastBlock.height - 1}&limit=10`
+        `/api/bitcoin/search?q=${encodeURIComponent(searchQuery.trim())}`,
+        {
+          signal: abortController.signal,
+        }
       );
       const data = await response.json();
-      if (data.status === "success") {
-        const newBlocks = data.data.map((block: BlockApiResponse) => ({
-          height: block.height,
-          hash: block.hash,
-          timestamp: block.time,
-          size: block.size,
-          weight: block.weight || 0,
-          transactions: block.tx || [],
-          miner: block.miner || "Unknown",
-          difficulty: block.difficulty,
-          fees: block.fees || 0,
-        }));
 
-        setBlocks((prevBlocks) => [...prevBlocks, ...newBlocks]);
+      // Only update state if this request wasn't aborted
+      if (!abortController.signal.aborted) {
+        if (response.ok) {
+          setSearchResults(data.results);
+          // If we found a block, select it
+          const blockResult = data.results.find(
+            (r: SearchResult) => r.type === "block"
+          );
+          if (blockResult) {
+            const block = blockResult.data as BlockInfo;
+            const fees = block.tx.reduce(
+              (sum, tx) =>
+                sum +
+                tx.vout.reduce((voutSum, vout) => voutSum + vout.value, 0),
+              0
+            );
+            // Convert BlockInfo to BlockData
+            setSelectedBlock({
+              hash: block.hash,
+              height: block.height,
+              timestamp: block.time,
+              size: block.size,
+              weight: block.weight,
+              transactions: block.tx,
+              miner: "Unknown", // We could parse this from coinbase tx if needed
+              difficulty: block.difficulty,
+              fees: fees,
+            });
+          }
+        } else {
+          toast.error(data.error || "Search failed");
+          setSearchResults([]);
+        }
       }
     } catch (error) {
-      console.error("Error loading more blocks:", error);
+      // Only show error if it's not an abort error
+      if (!abortController.signal.aborted) {
+        console.error("Search error:", error);
+        toast.error("Failed to perform search");
+        setSearchResults([]);
+      }
+    } finally {
+      // Only update searching state if this request wasn't aborted
+      if (!abortController.signal.aborted) {
+        setIsSearching(false);
+      }
     }
   };
 
+  // Cleanup abort controller on unmount
   useEffect(() => {
-    // Load more blocks when we're close to the end
-    if (visibleRange.end >= blocks.length - 2) {
-      loadMoreBlocks();
-    }
-  }, [visibleRange.end, blocks.length]);
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, []);
 
-  const visibleBlocks = blocks.slice(visibleRange.start, visibleRange.end);
+  const handleAddressClick = (address: string) => {
+    router.push(`/address/${address}`);
+  };
 
   if (loading) {
     return (
@@ -508,20 +543,198 @@ export function BlockchainExplorer() {
   return (
     <div className="p-4 md:p-6">
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-zinc-900">Bitcoin Blockchain</h1>
-        <Input
-          type="search"
-          placeholder="Search block / transaction / address"
-          className="max-w-sm bg-white border-zinc-200 text-zinc-900 placeholder:text-zinc-400"
-        />
+        <h1 className="text-2xl font-bold text-zinc-900">
+          Bitcoin Blockchain (signet)
+        </h1>
+        <form onSubmit={handleSearch} className="relative max-w-md">
+          <Input
+            type="search"
+            placeholder="Search block / transaction / address"
+            className="bg-white border-zinc-200 text-zinc-900 min-w-md placeholder:text-zinc-400 pr-20"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          <button
+            type="submit"
+            className={cn(
+              "absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1 text-sm bg-zinc-900 text-white rounded-md hover:bg-zinc-800",
+              isSearching && "opacity-50 cursor-not-allowed"
+            )}
+            disabled={isSearching}
+          >
+            {isSearching ? "..." : "Search"}
+          </button>
+        </form>
       </div>
+
+      {searchResults.length > 0 && searchResults[0].type !== "block" && (
+        <div className="mb-6 space-y-4">
+          {searchResults.map((result, index) => (
+            <Card key={index} className="p-4">
+              <div className="flex items-start justify-between">
+                <div>
+                  <Badge>
+                    {result.type === "transaction" ? "Transaction" : "Address"}
+                  </Badge>
+                  <div className="mt-2">
+                    {result.type === "transaction" && (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm text-zinc-500">
+                            Transaction ID:
+                          </p>
+                          <Link
+                            href={`/tx/${
+                              (result.data as TransactionInfo).txid
+                            }`}
+                            className="hover:underline cursor-pointer"
+                          >
+                            {(result.data as TransactionInfo).txid}
+                          </Link>
+                          <CopyButton
+                            text={(result.data as TransactionInfo).txid}
+                          />
+                        </div>
+                        <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                          <div>
+                            <span className="text-zinc-500">Size:</span>{" "}
+                            <span className="text-zinc-900">
+                              {(result.data as TransactionInfo).size} bytes
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-500">Weight:</span>{" "}
+                            <span className="text-zinc-900">
+                              {(result.data as TransactionInfo).weight} WU
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-500">Inputs:</span>{" "}
+                            <span className="text-zinc-900">
+                              {(result.data as TransactionInfo).vin.length}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-500">Outputs:</span>{" "}
+                            <span className="text-zinc-900">
+                              {(result.data as TransactionInfo).vout.length}
+                            </span>
+                          </div>
+                          <div className="mt-4 flex justify-start">
+                            <button
+                              onClick={() =>
+                                router.push(
+                                  `/tx/${(result.data as TransactionInfo).txid}`
+                                )
+                              }
+                              className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
+                            >
+                              View Details
+                              <ArrowUpRight className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                    {result.type === "address" && (
+                      <>
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm text-zinc-500">Address:</p>
+                          <button
+                            onClick={() =>
+                              handleAddressClick(
+                                (result.data as AddressResult).address
+                              )
+                            }
+                            className="font-mono text-sm hover:text-blue-600"
+                          >
+                            {(result.data as AddressResult).address}
+                          </button>
+                          <CopyButton
+                            text={(result.data as AddressResult).address}
+                          />
+                        </div>
+                        <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
+                          <div>
+                            <span className="text-zinc-500">Type:</span>{" "}
+                            <span className="text-zinc-900">
+                              {(result.data as AddressResult).iswitness
+                                ? `Witness v${
+                                    (result.data as AddressResult)
+                                      .witness_version
+                                  }`
+                                : (result.data as AddressResult).isscript
+                                ? "Script"
+                                : "Legacy"}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-500">Balance:</span>{" "}
+                            <span className="text-zinc-900 font-mono">
+                              {(result.data as AddressResult).balance.toFixed(
+                                8
+                              )}{" "}
+                              BTC
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-500">
+                              Unspent Outputs:
+                            </span>{" "}
+                            <span className="text-zinc-900">
+                              {
+                                (result.data as AddressResult).unspent_txouts
+                                  .length
+                              }
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-zinc-500">
+                              Total Transactions:
+                            </span>{" "}
+                            <span className="text-zinc-900">
+                              {
+                                (result.data as AddressResult).unspent_txouts
+                                  ?.length
+                              }
+                            </span>
+                          </div>
+                        </div>
+                        <div className="mt-4 flex justify-start">
+                          <button
+                            onClick={() =>
+                              handleAddressClick(
+                                (result.data as AddressResult).address
+                              )
+                            }
+                            className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
+                          >
+                            View Details
+                            <ArrowUpRight className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
 
       <div className="relative">
         <button
           onClick={handlePrevious}
-          className="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-4 p-2 rounded-full bg-white border border-zinc-200 shadow-sm hover:border-zinc-300 z-10"
+          disabled={currentPage === 0}
+          className={cn(
+            "absolute left-0 top-1/2 -translate-y-1/2 -translate-x-4 p-2 rounded-full bg-white border border-zinc-200 shadow-sm hover:border-zinc-300 z-10",
+            currentPage === 0
+              ? "opacity-50 cursor-not-allowed"
+              : "cursor-pointer"
+          )}
         >
-          <ChevronLeft className="h-4 w-4 text-zinc-600 cursor-pointer" />
+          <ChevronLeft className="h-4 w-4 text-zinc-600" />
         </button>
 
         <div className="overflow-x-auto">
@@ -539,9 +752,9 @@ export function BlockchainExplorer() {
 
         <button
           onClick={handleNext}
-          className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-4 p-2 rounded-full bg-white border border-zinc-200 shadow-sm hover:border-zinc-300 z-10"
+          className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-4 p-2 rounded-full bg-white border border-zinc-200 shadow-sm hover:border-zinc-300 z-10 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
         >
-          <ChevronRight className="h-4 w-4 text-zinc-600 cursor-pointer" />
+          <ChevronRight className="h-4 w-4 text-zinc-600" />
         </button>
       </div>
 
@@ -549,13 +762,13 @@ export function BlockchainExplorer() {
         <TabsList className="bg-white border border-zinc-200">
           <TabsTrigger
             value="block"
-            className="data-[state=active]:bg-zinc-100 data-[state=active]:text-zinc-900"
+            className="data-[state=active]:bg-zinc-100 data-[state=active]:text-zinc-900 cursor-pointer hover:bg-zinc-50"
           >
             Block Details
           </TabsTrigger>
           <TabsTrigger
             value="mempool"
-            className="data-[state=active]:bg-zinc-100 data-[state=active]:text-zinc-900"
+            className="data-[state=active]:bg-zinc-100 data-[state=active]:text-zinc-900 cursor-pointer hover:bg-zinc-50"
           >
             Mempool
           </TabsTrigger>

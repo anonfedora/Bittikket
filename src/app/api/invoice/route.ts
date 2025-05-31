@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { lndClient } from "@/lib/lnd";
-import { InvoiceRequest, FrontendInvoice } from "@/types";
+import { InvoiceRequest, FrontendInvoice } from "@/types/lnd";
 
 export async function POST(request: NextRequest) {
   try {
